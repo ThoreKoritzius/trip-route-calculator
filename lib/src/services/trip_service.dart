@@ -254,51 +254,48 @@ class TripService {
     var graph = parseGraph(fetchedData, preferWalkingPaths);
     final queryIds = findClosestNodes(graph, waypoints);
     for (var i = 0; i < queryIds.length - 1; i++) {
-      for (var i = 0; i < queryIds.length - 1; i++) {
-        var subTrip = Trip(route: [], distance: 0, errors: []);
-        bool subRouteFound = false;
+      var subTrip = Trip(route: [], distance: 0, errors: []);
+      bool subRouteFound = false;
+
+      try {
+        subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
+        subRouteFound = subTrip.route.isNotEmpty;
+      } catch (e) {
+        print('Error calculating route: $e');
+      }
+
+      // Retry with increased bounds
+      if (!subRouteFound) {
+        print('No path found. Retrying with increased bounding box padding...');
+        final retryPaddingLat = initialPaddingLat + 0.3;
+        final retryPaddingLon = initialPaddingLon + 0.3;
+        final updatedBounds = findLatLonBounds(waypoints,
+            paddingLat: retryPaddingLat, paddingLon: retryPaddingLon);
+        fetchedData = await fetchWalkingPaths(updatedBounds[0],
+            updatedBounds[1], updatedBounds[2], updatedBounds[3]);
+        graph = parseGraph(fetchedData, preferWalkingPaths);
 
         try {
           subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
           subRouteFound = subTrip.route.isNotEmpty;
         } catch (e) {
-          print('Error calculating route: $e');
+          print('Error calculating route during retry: $e');
         }
+      }
 
-        // Retry with increased bounds
-        if (!subRouteFound) {
-          print(
-              'No path found. Retrying with increased bounding box padding...');
-          final retryPaddingLat = initialPaddingLat + 0.3;
-          final retryPaddingLon = initialPaddingLon + 0.3;
-          final updatedBounds = findLatLonBounds(waypoints,
-              paddingLat: retryPaddingLat, paddingLon: retryPaddingLon);
-          fetchedData = await fetchWalkingPaths(updatedBounds[0],
-              updatedBounds[1], updatedBounds[2], updatedBounds[3]);
-          graph = parseGraph(fetchedData, preferWalkingPaths);
-
-          try {
-            subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
-            subRouteFound = subTrip.route.isNotEmpty;
-          } catch (e) {
-            print('Error calculating route during retry: $e');
-          }
-        }
-
-        if (!subRouteFound) {
-          print('No path found even after retry.');
-          errors.add(
-              "Could not find sub-route between ${waypoints[i]} and ${waypoints[i + 1]}");
-          totalRoute.add(waypoints[i + 1]);
-          totalDistance += haversineDistance(
-              waypoints[i].latitude,
-              waypoints[i].longitude,
-              waypoints[i + 1].latitude,
-              waypoints[i + 1].longitude);
-        } else {
-          totalRoute.addAll(subTrip.route);
-          totalDistance += subTrip.distance;
-        }
+      if (!subRouteFound) {
+        print('No path found even after retry.');
+        errors.add(
+            "Could not find sub-route between ${waypoints[i]} and ${waypoints[i + 1]}");
+        totalRoute.add(waypoints[i + 1]);
+        totalDistance += haversineDistance(
+            waypoints[i].latitude,
+            waypoints[i].longitude,
+            waypoints[i + 1].latitude,
+            waypoints[i + 1].longitude);
+      } else {
+        totalRoute.addAll(subTrip.route);
+        totalDistance += subTrip.distance;
       }
     }
     return Trip(route: totalRoute, distance: totalDistance, errors: errors);
