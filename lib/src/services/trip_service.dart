@@ -229,7 +229,10 @@ class TripService {
         .toList()
         .map((a) => LatLng(graph.nodes[a]!.lat, graph.nodes[a]!.lon))
         .toList();
-    return Trip(route: route, distance: distances[targetId]!, errors: []);
+    return Trip(
+        route: route,
+        distance: distances[targetId] ?? double.infinity,
+        errors: []);
   }
 
   Future<Trip> findTotalTrip(List<LatLng> waypoints,
@@ -245,12 +248,6 @@ class TripService {
     var graph = parseGraph(fetchedData, preferWalkingPaths);
     final queryIds = findClosestNodes(graph, waypoints);
     for (var i = 0; i < queryIds.length - 1; i++) {
-      var subTrip = Trip(route: [], distance: 0, errors: []);
-      try {
-        subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
-      } catch (e) {
-        print('Error calculating route: $e');
-      }
       for (var i = 0; i < queryIds.length - 1; i++) {
         var subTrip = Trip(route: [], distance: 0, errors: []);
         bool subRouteFound = false;

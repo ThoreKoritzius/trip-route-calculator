@@ -13,3 +13,11 @@
 ## 0.0.4
 
 * Lower flutter version requirement
+
+## 0.0.5
+
+* Increase bounding box if no route is found
+
+## 0.0.6
+
+* Speed increases, bug fixes

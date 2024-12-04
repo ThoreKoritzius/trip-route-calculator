@@ -31,3 +31,8 @@ try {
 ### Package Link
 Find the flutter package at
 https://pub.dev/packages/trip_routing
+
+
+### Repo Link
+Find the code repo at
+https://github.com/ThoreKoritzius/trip-route-calculator
