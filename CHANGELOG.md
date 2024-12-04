@@ -24,4 +24,8 @@
 
 ## 0.0.7
 
-* Fixing route length
+* Fixing route length calculation 
+
+## 0.0.8
+
+* Fixing route length calculation
