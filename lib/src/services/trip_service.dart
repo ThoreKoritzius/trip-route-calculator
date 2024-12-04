@@ -167,7 +167,9 @@ class TripService {
   }
 
   Trip shortestPath(Graph graph, int startId, int targetId) {
-    final distances = <int, double>{};
+    final actualDistances = <int, double>{}; // True distances in meters
+    final weightedDistances =
+        <int, double>{}; // Weighted distances for preference
     final previousNodes = <int, int>{};
     final visited = <int>{};
 
@@ -178,13 +180,15 @@ class TripService {
 
     // Initialize distances
     for (final nodeId in graph.nodes.keys) {
-      distances[nodeId] = double.infinity;
+      actualDistances[nodeId] = double.infinity;
+      weightedDistances[nodeId] = double.infinity;
     }
-    distances[startId] = 0;
+    actualDistances[startId] = 0;
+    weightedDistances[startId] = 0;
     priorityQueue.add(MapEntry(startId, 0));
 
     while (priorityQueue.isNotEmpty) {
-      // Get the node with the smallest distance
+      // Get the node with the smallest weighted distance
       final currentNodeId = priorityQueue.removeFirst().key;
 
       // Mark as visited
@@ -198,20 +202,21 @@ class TripService {
       for (final edge in graph.adjacencyList[currentNodeId]!) {
         if (visited.contains(edge.to)) continue;
 
-        // Calculate distance
+        // Calculate distances
         final isFootWay = graph.nodes[edge.to]?.isFootWay ?? false;
-        final footwayPenalty =
-            isFootWay ? 0.95 : 1.0; // Prefer footways slightly
-        final newDistance =
-            distances[currentNodeId]! + edge.weight * footwayPenalty;
+        final footwayPenalty = isFootWay ? 0.95 : 1.0;
+        final newActualDistance = actualDistances[currentNodeId]! + edge.weight;
+        final newWeightedDistance =
+            weightedDistances[currentNodeId]! + edge.weight * footwayPenalty;
 
-        // Relax the edge if a shorter path is found
-        if (newDistance < distances[edge.to]!) {
-          distances[edge.to] = newDistance;
+        // Relax the edge if a shorter weighted path is found
+        if (newWeightedDistance < weightedDistances[edge.to]!) {
+          actualDistances[edge.to] = newActualDistance;
+          weightedDistances[edge.to] = newWeightedDistance;
           previousNodes[edge.to] = currentNodeId;
 
           // Push to priority queue
-          priorityQueue.add(MapEntry(edge.to, newDistance));
+          priorityQueue.add(MapEntry(edge.to, newWeightedDistance));
         }
       }
     }
@@ -230,9 +235,10 @@ class TripService {
         .map((a) => LatLng(graph.nodes[a]!.lat, graph.nodes[a]!.lon))
         .toList();
     return Trip(
-        route: route,
-        distance: distances[targetId] ?? double.infinity,
-        errors: []);
+      route: route,
+      distance: actualDistances[targetId] ?? double.infinity,
+      errors: [],
+    );
   }
 
   Future<Trip> findTotalTrip(List<LatLng> waypoints,

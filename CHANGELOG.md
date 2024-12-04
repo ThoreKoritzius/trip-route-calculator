@@ -21,3 +21,7 @@
 ## 0.0.6
 
 * Speed increases, bug fixes
+
+## 0.0.7
+
+* Fixing route length

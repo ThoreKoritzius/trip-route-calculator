@@ -5,7 +5,7 @@ Flutter on-device trip-routing calculator package for multiple waypoints, optimi
 Add this to your package's `pubspec.yaml` file:
 ```
 dependencies:
-  trip_routing: ^0.0.5
+  trip_routing: ^0.0.7
 ```
 
 ### Example
