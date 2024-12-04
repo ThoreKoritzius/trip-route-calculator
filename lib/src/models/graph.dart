@@ -1,4 +1,3 @@
-
 import 'edge.dart';
 import 'node.dart';
 

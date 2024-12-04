@@ -1,4 +1,3 @@
-
 class Node {
   final int id;
   final double lat;

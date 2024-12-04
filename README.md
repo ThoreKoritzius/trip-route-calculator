@@ -1,11 +1,11 @@
 ## Routing Trip Planner
-Flutter on-device trip-routing calculator package for multiple waypoints, optimized for food traffic. This package uses overpass api to fetch all ways inside bounding box of your waypoints and provides a detailed polyline route containing a list of LatLng points.
+Flutter on-device trip-routing calculator package for multiple waypoints, optimized for pedestrian navigation. This package uses overpass api to fetch all ways inside bounding box of your waypoints and provides a detailed polyline route containing a list of LatLng points.
 
 ### Getting started
 Add this to your package's `pubspec.yaml` file:
 ```
 dependencies:
-  trip_routing: ^0.0.4
+  trip_routing: ^0.0.5
 ```
 
 ### Example
