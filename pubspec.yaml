@@ -1,15 +1,16 @@
 name: trip_routing
 description: "Flutter on-device trip-routing calculator package for multiple waypoints, optimized for food traffic."
-version: 0.0.1
-homepage: https://worldbummlr.com/
+version: 0.0.4
+homepage: https://worldbummlr.com
+repository: https://github.com/ThoreKoritzius/trip-route-calculator
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
-  flutter: '>=3.24.2'
+  flutter: '>=3.3.0'
 
 dependencies:
-  latlong2: ^0.8.1
-  collection: ^1.17.0
+  latlong2: ^0.9.1
+  collection: ^1.18.0
   http: ^1.2.2
 
   flutter:

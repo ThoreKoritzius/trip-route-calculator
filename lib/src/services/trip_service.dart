@@ -1,9 +1,4 @@
-// TODO Implement this library.
-
 import 'dart:convert';
-
-import 'package:trip_routing/src/models/edge.dart';
-import 'package:trip_routing/src/utils/bounds_calculator.dart';
 import 'package:trip_routing/trip_routing.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:collection/collection.dart';
@@ -173,7 +168,7 @@ Graph removeNodeIslands(Graph graph, int maxNodes) {
     return closestNodeIds;
   }
 
-   Trip shortestPath(Graph graph, int startId, int targetId) {
+  Trip shortestPath(Graph graph, int startId, int targetId) {
     final distances = <int, double>{};
     final previousNodes = <int, int>{};
     final visited = <int>{};
@@ -236,22 +231,28 @@ Graph removeNodeIslands(Graph graph, int maxNodes) {
         .toList()
         .map((a) => LatLng(graph.nodes[a]!.lat, graph.nodes[a]!.lon))
         .toList();
-    return Trip(route: route, distance: distances[targetId]!);
+    return Trip(route: route, distance: distances[targetId]!, errors: []);
   }
 
   Future<Trip> findTotalTrip(List<LatLng> waypoints, {bool preferWalkingPaths= true}) async {
     final totalRoute = <LatLng>[];
     var totalDistance = 0.0;
+    var errors = <String>[];
     final bounds = findLatLonBounds(waypoints);
     final fetchedData =
         await fetchWalkingPaths(bounds[0], bounds[1], bounds[2], bounds[3]);
-    // After fetching and parsing the graph
-    final graph = parseGraph(fetchedData, preferWalkingPaths); // Use the parsed graph
+    final graph = parseGraph(fetchedData, preferWalkingPaths);
     final queryIds = findClosestNodes(graph, waypoints);
     for (var i = 0; i < queryIds.length - 1; i++) {
-      final path = shortestPath(graph, queryIds[i], queryIds[i + 1]);
-      if (path.route.isEmpty) {
+      var subTrip = Trip(route: [], distance: 0, errors: []);
+      try{
+        subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
+      } catch (e) {
+        print('Error calculating route: $e');
+      }
+      if (subTrip.route.isEmpty) {
         print('No path found between the points.');
+        errors.add("Could not find sub-route between ${waypoints[i]} and ${waypoints[i+1]}");
         totalRoute.addAll([waypoints[i + 1]]);
         totalDistance += haversineDistance(
             waypoints[i].latitude,
@@ -259,10 +260,10 @@ Graph removeNodeIslands(Graph graph, int maxNodes) {
             waypoints[i + 1].latitude,
             waypoints[i + 1].longitude);
       } else {
-        totalRoute.addAll(path.route);
-        totalDistance += path.distance;
+        totalRoute.addAll(subTrip.route);
+        totalDistance += subTrip.distance;
       }
     }
-    return Trip(route: totalRoute, distance: totalDistance);
+    return Trip(route: totalRoute, distance: totalDistance, errors: errors);
   }
 }
