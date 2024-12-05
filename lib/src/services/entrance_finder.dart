@@ -1,27 +1,35 @@
 import 'dart:math';
-
 import 'package:latlong2/latlong.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class BuildingAndEntranceFinder {
-  final Distance distance = Distance();
-
+  final Distance distance = const Distance();
   final String overpassUrl = "http://overpass-api.de/api/interpreter";
+  final double searchRadius = 50.0; // Radius in meters
 
-  Future<Map<String, dynamic>> fetchBuildingAndEntrances(
-      double latitude, double longitude, double searchRadius) async {
-    final query = '''
-    [out:json];
-    (
-      way["building"](around:$searchRadius,$latitude,$longitude);
-      node["entrance"](around:$searchRadius,$latitude,$longitude);
-    );
-    out body geom;
-    ''';
+  String generateOverpassQuery(
+      List<LatLng> inputLocations, double radiusMeters) {
+    final buffer = StringBuffer();
+    buffer.writeln("[out:json];");
+    buffer.writeln("(");
+    for (final location in inputLocations) {
+      buffer.writeln(
+          '  node["entrance"](around:$radiusMeters, ${location.latitude}, ${location.longitude});');
+      buffer.writeln(
+          '  way["building"](around:$radiusMeters, ${location.latitude}, ${location.longitude});');
+    }
+    buffer.writeln(");");
+    buffer.writeln("out body geom;");
+    return buffer.toString();
+  }
+
+  Future<Map<String, dynamic>> fetchCombinedData(
+      List<LatLng> inputLocations) async {
+    final query = generateOverpassQuery(inputLocations, 50);
 
     final response = await http.post(
-      Uri.parse(overpassUrl),
+      Uri.parse("http://overpass-api.de/api/interpreter"),
       body: {"data": query},
     );
 
@@ -32,22 +40,22 @@ class BuildingAndEntranceFinder {
     }
   }
 
-  Future<LatLng> findBuildingAndEntrance(LatLng inputLocation) async {
-    const double searchRadius = 50.0;
+  Future<List<LatLng>> findBuildingAndEntrance(
+      List<LatLng> inputLocations) async {
+    List<LatLng> entranceLocations = [];
 
     try {
-      final data = await fetchBuildingAndEntrances(
-          inputLocation.latitude, inputLocation.longitude, searchRadius);
+      final data = await fetchCombinedData(inputLocations);
 
-      // Extract buildings and entrances from the response
-      List<Map<String, dynamic>> buildings = [];
+      // Extract entrances and buildings
       List<Map<String, dynamic>> entrances = [];
+      Map<int, Map<String, dynamic>> buildings = {}; // Use building ID as key
 
       for (var element in data['elements']) {
         if (element['type'] == 'way' &&
             element['tags'] != null &&
             element['tags']['building'] != null) {
-          buildings.add(element);
+          buildings[element['id']] = element;
         } else if (element['type'] == 'node' &&
             element['tags'] != null &&
             element['tags']['entrance'] != null) {
@@ -55,65 +63,87 @@ class BuildingAndEntranceFinder {
         }
       }
 
-      // Find the building containing the marker
-      Map<String, dynamic>? containingBuilding;
-
-      for (var building in buildings) {
-        final geometry = building['geometry'];
-
-        List<LatLng> polygon = geometry.map<LatLng>((node) {
-          return LatLng(node['lat'], node['lon']);
+      // Process each input location
+      for (final inputLocation in inputLocations) {
+        // Step 1: Search for entrances in the radius
+        final nearbyEntrances = entrances.where((entrance) {
+          final entranceLat = entrance['lat'] as double;
+          final entranceLon = entrance['lon'] as double;
+          return distance.as(
+                LengthUnit.Meter,
+                inputLocation,
+                LatLng(entranceLat, entranceLon),
+              ) <=
+              searchRadius;
         }).toList();
-        if (isPointInPolygon(inputLocation, polygon)) {
-          containingBuilding = building;
-          break;
-        }
-      }
+        if (nearbyEntrances.isNotEmpty) {
+          // Step 2: Check if the input location is inside a building
+          Map<String, dynamic>? containingBuilding;
+          for (var building in buildings.values) {
+            // Check if the input location is inside this polygon
+            if (isPointInPolygon(inputLocation, building)) {
+              containingBuilding = building;
+              break;
+            }
+          }
+          if (containingBuilding != null) {
+            print("Found building: ${containingBuilding['id']}");
 
-      if (containingBuilding != null) {
-        print("Found building: ${containingBuilding['id']}");
+            // Step 3: Fetch entrances to the building
+            final relevantEntrances = entrances.where((entrance) {
+              final lat = entrance['lat'] as double;
+              final lon = entrance['lon'] as double;
+              return isPointInPolygon(LatLng(lat, lon), containingBuilding);
+            }).toList();
 
-        // Filter entrances within the building polygon
-        final buildingPolygon = containingBuilding['geometry']
-            .map((node) => LatLng(node['lat'], node['lon']))
-            .toList();
-        final relevantEntrances = entrances
-            .where((entrance) => isPointInPolygon(
-                LatLng(entrance['lat'], entrance['lon']),
-                List.from(buildingPolygon)))
-            .toList();
+            // Prefer 'entrance=main' if available
+            final mainEntrance = relevantEntrances.firstWhere(
+                (entrance) => entrance['tags']['entrance'] == 'main',
+                orElse: () => <String, dynamic>{});
 
-        // Prefer 'entrance=main'
-        final mainEntrance = relevantEntrances.firstWhere(
-            (entrance) => entrance['tags']['entrance'] == 'main',
-            orElse: () => <String, dynamic>{});
-
-        if (mainEntrance.isNotEmpty) {
-          print(
-              "Main entrance: ${mainEntrance['id']} at ${mainEntrance['lat']}, ${mainEntrance['lon']}");
-          return LatLng(
-              mainEntrance['lat'] as double, mainEntrance['lon'] as double);
-        } else if (relevantEntrances.isNotEmpty) {
-          print(
-              "Other entrances found: ${relevantEntrances.map((e) => e['id']).join(', ')}");
-          return LatLng(relevantEntrances.first['lat'] as double,
-              relevantEntrances.first['lon'] as double);
+            if (mainEntrance.isNotEmpty) {
+              entranceLocations.add(LatLng(mainEntrance['lat'] as double,
+                  mainEntrance['lon'] as double));
+            } else if (relevantEntrances.isNotEmpty) {
+              entranceLocations.add(LatLng(
+                  relevantEntrances.first['lat'] as double,
+                  relevantEntrances.first['lon'] as double));
+            } else {
+              entranceLocations.add(inputLocation);
+            }
+          } else {
+            entranceLocations.add(inputLocation);
+          }
         } else {
-          print("No entrances found for this building.");
-          return inputLocation;
+          print("No nearby entrances found for ${inputLocation.toString()}");
+          entranceLocations.add(inputLocation);
         }
-      } else {
-        print("No building found at the given location.");
-        return inputLocation;
       }
     } catch (e) {
       print("Error: $e");
-      return inputLocation;
+      return inputLocations;
     }
+
+    return entranceLocations;
   }
 
   // Point-in-polygon check
-  bool isPointInPolygon(LatLng point, List<LatLng> polygon) {
+  bool isPointInPolygon(LatLng point, var buildingDict) {
+    var bbox = buildingDict['bounds'];
+    if (point.latitude < bbox['minlat'] ||
+        point.latitude > bbox['maxlat'] ||
+        point.longitude < bbox['minlon'] ||
+        point.longitude > bbox['maxlon']) {
+      return false;
+    }
+
+    final polygon = buildingDict['geometry'].map((node) {
+      final lat = node['lat'] as double;
+      final lon = node['lon'] as double;
+      return LatLng(lat, lon);
+    }).toList();
+
+    // Ray-casting algorithm
     int intersections = 0;
     for (int i = 0; i < polygon.length; i++) {
       final p1 = polygon[i];
@@ -123,7 +153,7 @@ class BuildingAndEntranceFinder {
         intersections++;
       }
     }
-    return intersections % 2 == 1; // Odd number of intersections = inside
+    return intersections % 2 == 1;
   }
 
   bool rayIntersectsSegment(LatLng point, LatLng p1, LatLng p2) {

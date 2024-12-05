@@ -33,3 +33,7 @@
 ## 0.0.9
 
 * Find entrances, better navigate places
+
+## 0.0.10
+
+* Find entrances, better navigate places

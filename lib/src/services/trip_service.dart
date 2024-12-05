@@ -269,6 +269,12 @@ class TripService {
     bool replaceWaypointsWithBuildingEntrances = false,
     bool forceIncludeWaypoints = false,
   }) async {
+    var totalRoute = <LatLng>[];
+    var totalDistance = 0.0;
+    var errors = <String>[];
+
+    final bounds = findLatLonBounds(waypoints);
+
     List<bool> foundEntrance = [];
     if (replaceWaypointsWithBuildingEntrances) {
       waypoints =
@@ -277,11 +283,6 @@ class TripService {
       foundEntrance = List<bool>.filled(waypoints.length, false);
     }
 
-    var totalRoute = <LatLng>[];
-    var totalDistance = 0.0;
-    var errors = <String>[];
-
-    final bounds = findLatLonBounds(waypoints);
     var graph = await _fetchGraph(bounds, preferWalkingPaths);
 
     final queryIds = _findClosestNodes(graph, waypoints);
@@ -305,12 +306,22 @@ class TripService {
   // Helper method to replace waypoints with building entrances
   Future<List<LatLng>> _replaceWaypointsWithEntrances(
       List<LatLng> waypoints, List<bool> foundEntrance) async {
+    // Call the modified findBuildingAndEntrance to get all entrances for the waypoints in the bounding box
+    List<LatLng> entrances =
+        await entranceFinder.findBuildingAndEntrance(waypoints);
+
     var updatedWaypoints = <LatLng>[];
-    for (var point in waypoints) {
-      var updatedPoint = await entranceFinder.findBuildingAndEntrance(point);
+
+    // For each waypoint, check if an entrance is found and update accordingly
+    for (int i = 0; i < waypoints.length; i++) {
+      var point = waypoints[i];
+      // Find the entrance closest to the current waypoint (or use the available one from the entrances list)
+      var updatedPoint = entrances.isNotEmpty ? entrances[i] : point;
       updatedWaypoints.add(updatedPoint);
-      foundEntrance.add(updatedPoint != point);
+      foundEntrance.add(updatedPoint !=
+          point); // Mark if the waypoint was updated with an entrance
     }
+
     return updatedWaypoints;
   }
 
