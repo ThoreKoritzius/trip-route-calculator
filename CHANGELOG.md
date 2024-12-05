@@ -29,3 +29,7 @@
 ## 0.0.8
 
 * Fixing route length calculation
+
+## 0.0.9
+
+* Find entrances, better navigate places

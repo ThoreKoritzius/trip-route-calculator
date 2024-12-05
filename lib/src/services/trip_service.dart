@@ -1,16 +1,18 @@
 import 'dart:convert';
+import 'package:trip_routing/src/services/entrance_finder.dart';
 import 'package:trip_routing/trip_routing.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:collection/collection.dart';
 import 'package:http/http.dart' as http;
 
 class TripService {
-  Future<List<Map<String, dynamic>>> fetchWalkingPaths(
+  final entranceFinder = BuildingAndEntranceFinder();
+  Future<List<Map<String, dynamic>>> _fetchWalkingPaths(
       double minLat, double minLon, double maxLat, double maxLon) async {
     final query = '''
     [out:json];
     (
-      way["highway"]($minLat, $minLon, $maxLat, $maxLon);
+      way["highway"]["area"!~"yes"]["place"!~"square"]($minLat, $minLon, $maxLat, $maxLon);
     );
     out body;
     >;
@@ -47,7 +49,7 @@ class TripService {
     }
   }
 
-  Graph removeNodeIslands(Graph graph, int maxNodes) {
+  Graph _removeNodeIslands(Graph graph, int maxNodes) {
     final visited = <int>{};
     final connectedComponents = <List<int>>[];
 
@@ -92,7 +94,7 @@ class TripService {
     }
   }
 
-  Graph parseGraph(List elements, bool preferWalkingPaths) {
+  Graph _parseGraph(List elements, bool preferWalkingPaths) {
     var graph = Graph();
     for (final element in elements) {
       if (element['type'] == 'node') {
@@ -142,11 +144,11 @@ class TripService {
       }
     }
 
-    graph = removeNodeIslands(graph, 100);
+    graph = _removeNodeIslands(graph, 100);
     return graph;
   }
 
-  List<int> findClosestNodes(Graph graph, List<LatLng> positions) {
+  List<int> _findClosestNodes(Graph graph, List<LatLng> positions) {
     final closestNodeIds = <int>[];
 
     for (final position in positions) {
@@ -167,7 +169,7 @@ class TripService {
   }
 
   Trip shortestPath(Graph graph, int startId, int targetId) {
-    final actualDistances = <int, double>{}; // True distances in meters
+    final actualDistances = <int, double>{};
     final weightedDistances =
         <int, double>{}; // Weighted distances for preference
     final previousNodes = <int, int>{};
@@ -241,63 +243,122 @@ class TripService {
     );
   }
 
-  Future<Trip> findTotalTrip(List<LatLng> waypoints,
-      {bool preferWalkingPaths = true}) async {
-    final totalRoute = <LatLng>[];
+  /// Calculates the total trip route and distance between any given waypoints.
+  ///
+  /// This function computes the optimal path between a list of waypoints, optionally adjusting the
+  /// route based on walking paths or building entrances.
+  ///
+  /// Parameters:
+  ///   - [waypoints]: A list of `LatLng` objects representing the locations (latitude and longitude)
+  ///     between which the route needs to be calculated.
+  ///   - [preferWalkingPaths]: Bool flag indicating whether walking paths should be preferred
+  ///     over other types of paths. Defaults to `true`.
+  ///   - [replaceWaypointsWithBuildingEntrances]: Boolean flag that determines if waypoints should
+  ///     be replaced with building entrances. Defaults to `false`.
+  ///   - [forceIncludeWaypoints]: Boolean flag that forces the inclusion of waypoints in the final
+  ///     route even if they are not exactly on a road. Defaults to `false`.
+  ///
+  /// Returns:
+  ///   A `Future<Trip>` representing the total trip, including:
+  ///   - [route]: List of `LatLng` locations representing the full trip route from start to destination.
+  ///   - [distance]: `double`, representing the total distance of the trip in meters.
+  ///   - [errors]: List of `String` containing error messages encountered during route calculation.
+  Future<Trip> findTotalTrip(
+    List<LatLng> waypoints, {
+    bool preferWalkingPaths = true,
+    bool replaceWaypointsWithBuildingEntrances = false,
+    bool forceIncludeWaypoints = false,
+  }) async {
+    List<bool> foundEntrance = [];
+    if (replaceWaypointsWithBuildingEntrances) {
+      waypoints =
+          await _replaceWaypointsWithEntrances(waypoints, foundEntrance);
+    } else {
+      foundEntrance = List<bool>.filled(waypoints.length, false);
+    }
+
+    var totalRoute = <LatLng>[];
     var totalDistance = 0.0;
-    var initialPaddingLat = 0.3;
-    var initialPaddingLon = 0.3;
     var errors = <String>[];
+
     final bounds = findLatLonBounds(waypoints);
-    var fetchedData =
-        await fetchWalkingPaths(bounds[0], bounds[1], bounds[2], bounds[3]);
-    var graph = parseGraph(fetchedData, preferWalkingPaths);
-    final queryIds = findClosestNodes(graph, waypoints);
+    var graph = await _fetchGraph(bounds, preferWalkingPaths);
+
+    final queryIds = _findClosestNodes(graph, waypoints);
+
     for (var i = 0; i < queryIds.length - 1; i++) {
-      var subTrip = Trip(route: [], distance: 0, errors: []);
-      bool subRouteFound = false;
+      final subTrip = await _findSubTrip(graph, queryIds[i], queryIds[i + 1],
+          waypoints[i], waypoints[i + 1], bounds, preferWalkingPaths);
+      totalRoute.addAll(subTrip.route);
+      totalDistance += subTrip.distance;
 
-      try {
-        subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
-        subRouteFound = subTrip.route.isNotEmpty;
-      } catch (e) {
-        print('Error calculating route: $e');
-      }
-
-      // Retry with increased bounds
-      if (!subRouteFound) {
-        print('No path found. Retrying with increased bounding box padding...');
-        final retryPaddingLat = initialPaddingLat + 0.3;
-        final retryPaddingLon = initialPaddingLon + 0.3;
-        final updatedBounds = findLatLonBounds(waypoints,
-            paddingLat: retryPaddingLat, paddingLon: retryPaddingLon);
-        fetchedData = await fetchWalkingPaths(updatedBounds[0],
-            updatedBounds[1], updatedBounds[2], updatedBounds[3]);
-        graph = parseGraph(fetchedData, preferWalkingPaths);
-
-        try {
-          subTrip = shortestPath(graph, queryIds[i], queryIds[i + 1]);
-          subRouteFound = subTrip.route.isNotEmpty;
-        } catch (e) {
-          print('Error calculating route during retry: $e');
-        }
-      }
-
-      if (!subRouteFound) {
-        print('No path found even after retry.');
-        errors.add(
-            "Could not find sub-route between ${waypoints[i]} and ${waypoints[i + 1]}");
+      // Add waypoints back to the route if necessary
+      if (_shouldAddWaypoint(
+          subTrip, foundEntrance, forceIncludeWaypoints, i)) {
         totalRoute.add(waypoints[i + 1]);
-        totalDistance += haversineDistance(
-            waypoints[i].latitude,
-            waypoints[i].longitude,
-            waypoints[i + 1].latitude,
-            waypoints[i + 1].longitude);
-      } else {
-        totalRoute.addAll(subTrip.route);
-        totalDistance += subTrip.distance;
       }
     }
+
     return Trip(route: totalRoute, distance: totalDistance, errors: errors);
+  }
+
+  // Helper method to replace waypoints with building entrances
+  Future<List<LatLng>> _replaceWaypointsWithEntrances(
+      List<LatLng> waypoints, List<bool> foundEntrance) async {
+    var updatedWaypoints = <LatLng>[];
+    for (var point in waypoints) {
+      var updatedPoint = await entranceFinder.findBuildingAndEntrance(point);
+      updatedWaypoints.add(updatedPoint);
+      foundEntrance.add(updatedPoint != point);
+    }
+    return updatedWaypoints;
+  }
+
+  // Helper method to fetch graph data and parse it
+  Future<Graph> _fetchGraph(
+      List<double> bounds, bool preferWalkingPaths) async {
+    var fetchedData =
+        await _fetchWalkingPaths(bounds[0], bounds[1], bounds[2], bounds[3]);
+    return _parseGraph(fetchedData, preferWalkingPaths);
+  }
+
+  // Helper method to find sub-trip between two nodes with retries
+  Future<Trip> _findSubTrip(Graph graph, int startId, int endId, LatLng start,
+      LatLng end, List<double> bounds, bool preferWalkingPaths) async {
+    var subTrip = Trip(route: [], distance: 0, errors: []);
+    try {
+      subTrip = shortestPath(graph, startId, endId);
+      if (subTrip.route.isEmpty) {
+        subTrip.errors.add("Could not find sub-route between $start and $end");
+      }
+    } catch (e) {
+      print('Error calculating route: $e');
+      // Retry with increased bounding box padding
+      print('Retrying with increased bounding box...');
+      var updatedBounds =
+          findLatLonBounds([start, end], paddingLat: 0.6, paddingLon: 0.6);
+      var newGraph = await _fetchGraph(updatedBounds, preferWalkingPaths);
+      subTrip = await _retrySubTrip(newGraph, startId, endId);
+    }
+
+    return subTrip;
+  }
+
+  // Retry fetching the sub-trip in case of failure
+  Future<Trip> _retrySubTrip(Graph graph, int startId, int endId) async {
+    var subTrip = Trip(route: [], distance: 0, errors: []);
+    try {
+      subTrip = shortestPath(graph, startId, endId);
+    } catch (e) {
+      print('Error calculating route during retry: $e');
+    }
+    return subTrip;
+  }
+
+  // Helper method to determine whether to add a waypoint to the route
+  bool _shouldAddWaypoint(Trip subTrip, List<bool> foundEntrance,
+      bool forceIncludeWaypoints, int index) {
+    return forceIncludeWaypoints ||
+        (foundEntrance[index + 1] && subTrip.route.isNotEmpty);
   }
 }
