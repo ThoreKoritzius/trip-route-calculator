@@ -37,3 +37,7 @@
 ## 0.0.10
 
 * Find entrances, better navigate places
+
+## 0.0.11
+
+* Offline routing capability

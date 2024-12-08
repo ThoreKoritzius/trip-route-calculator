@@ -1,5 +1,7 @@
 import 'edge.dart';
 import 'node.dart';
+import 'dart:convert';
+import 'dart:io';
 
 class Graph {
   final Map<int, Node> nodes = {};
@@ -24,5 +26,72 @@ class Graph {
     for (final edge in edgesToRemove) {
       adjacencyList[edge.to]?.removeWhere((e) => e.to == nodeId);
     }
+  }
+
+  Future<Graph> loadGraph(filePath) async {
+    final file = File(filePath);
+
+    if (!await file.exists()) {
+      throw Exception('Graph file for $filePath not found.');
+    }
+
+    // Read and parse JSON
+    final jsonString = await file.readAsString();
+    final Map<String, dynamic> graphJson = jsonDecode(jsonString);
+
+    // Reconstruct Graph
+    final graph = Graph();
+    final nodeMap = <int, Node>{};
+
+    // Add nodes
+    for (final nodeJson in graphJson['nodes']) {
+      final node = Node(
+        nodeJson['id'],
+        nodeJson['lat'],
+        nodeJson['lon'],
+        nodeJson['isFootWay'],
+      );
+      graph.addNode(node);
+      nodeMap[node.id] = node;
+    }
+
+    // Add edges
+    for (final edgeJson in graphJson['edges']) {
+      final edge = Edge(
+        edgeJson['from'],
+        edgeJson['to'],
+        edgeJson['weight'],
+      );
+      graph.addEdge(edge);
+    }
+
+    print('Graph loaded from $filePath');
+    return graph;
+  }
+
+  Future<void> saveGraph(String filePath) async {
+    final file = File(filePath);
+
+    // Serialize Graph to JSON
+    final graphJson = {
+      'nodes': nodes.values
+          .map((node) => {
+                'id': node.id,
+                'lat': node.lat,
+                'lon': node.lon,
+                'isFootWay': node.isFootWay,
+              })
+          .toList(),
+      'edges': adjacencyList.entries.expand((entry) {
+        return entry.value.map((edge) => {
+              'from': edge.from,
+              'to': edge.to,
+              'weight': edge.weight,
+            });
+      }).toList(),
+    };
+
+    await file.writeAsString(jsonEncode(graphJson));
+    print('Graph saved at $filePath');
   }
 }

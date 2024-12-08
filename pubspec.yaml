@@ -1,6 +1,6 @@
 name: trip_routing
 description: "Flutter on-device trip-routing calculator package for multiple waypoints, optimized for pedestrian navigation."
-version: 0.0.10
+version: 0.0.11
 homepage: https://worldbummlr.com
 repository: https://github.com/ThoreKoritzius/trip-route-calculator
 

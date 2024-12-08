@@ -4,5 +4,10 @@ class Trip {
   final List<LatLng> route;
   final double distance;
   final List<String> errors;
-  Trip({required this.route, required this.distance, required this.errors});
+  final List<double>? boundingBox;
+  Trip(
+      {required this.route,
+      required this.distance,
+      required this.errors,
+      this.boundingBox});
 }

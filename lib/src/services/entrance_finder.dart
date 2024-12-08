@@ -8,7 +8,8 @@ class BuildingAndEntranceFinder {
   final String overpassUrl = "http://overpass-api.de/api/interpreter";
   final double searchRadius = 50.0; // Radius in meters
 
-  String generateOverpassQuery(
+  //search for buildings and entrances around the given input location
+  String _generateOverpassQuery(
       List<LatLng> inputLocations, double radiusMeters) {
     final buffer = StringBuffer();
     buffer.writeln("[out:json];");
@@ -24,9 +25,9 @@ class BuildingAndEntranceFinder {
     return buffer.toString();
   }
 
-  Future<Map<String, dynamic>> fetchCombinedData(
+  Future<Map<String, dynamic>> _fetchCombinedData(
       List<LatLng> inputLocations) async {
-    final query = generateOverpassQuery(inputLocations, 50);
+    final query = _generateOverpassQuery(inputLocations, 50);
 
     final response = await http.post(
       Uri.parse("http://overpass-api.de/api/interpreter"),
@@ -45,11 +46,11 @@ class BuildingAndEntranceFinder {
     List<LatLng> entranceLocations = [];
 
     try {
-      final data = await fetchCombinedData(inputLocations);
+      final data = await _fetchCombinedData(inputLocations);
 
       // Extract entrances and buildings
       List<Map<String, dynamic>> entrances = [];
-      Map<int, Map<String, dynamic>> buildings = {}; // Use building ID as key
+      Map<int, Map<String, dynamic>> buildings = {};
 
       for (var element in data['elements']) {
         if (element['type'] == 'way' &&

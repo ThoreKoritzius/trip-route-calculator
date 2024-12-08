@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 
 class TripService {
   final entranceFinder = BuildingAndEntranceFinder();
+  var currentCity;
+  var graph = Graph();
   Future<List<Map<String, dynamic>>> _fetchWalkingPaths(
       double minLat, double minLon, double maxLat, double maxLon) async {
     final query = '''
@@ -243,6 +245,90 @@ class TripService {
     );
   }
 
+  Trip _findGlobalShortestPath(
+    Graph graph,
+    int startId,
+    int targetId,
+    double duplicationPenalty,
+    Set<String> usedEdges,
+  ) {
+    final actualDistances = <int, double>{};
+    final weightedDistances = <int, double>{};
+    final previousNodes = <int, int>{};
+    final visited = <int>{};
+    final priorityQueue = PriorityQueue<MapEntry<int, double>>(
+      (a, b) => a.value.compareTo(b.value),
+    );
+
+    // Initialize distances
+    for (final nodeId in graph.nodes.keys) {
+      actualDistances[nodeId] = double.infinity;
+      weightedDistances[nodeId] = double.infinity;
+    }
+    actualDistances[startId] = 0;
+    weightedDistances[startId] = 0;
+    priorityQueue.add(MapEntry(startId, 0));
+
+    while (priorityQueue.isNotEmpty) {
+      final currentNodeId = priorityQueue.removeFirst().key;
+
+      if (visited.contains(currentNodeId)) continue;
+      visited.add(currentNodeId);
+
+      if (currentNodeId == targetId) break;
+
+      for (final edge in graph.adjacencyList[currentNodeId]!) {
+        if (visited.contains(edge.to)) continue;
+
+        // Calculate edge key and penalty
+        final edgeKey = '${edge.from}-${edge.to}';
+        final edgePenalty =
+            usedEdges.contains(edgeKey) ? duplicationPenalty : 0.0;
+
+        final isFootWay = graph.nodes[edge.to]?.isFootWay ?? false;
+        final footwayPenalty = isFootWay ? 0.95 : 1.0;
+
+        final newActualDistance = actualDistances[currentNodeId]! + edge.weight;
+        final newWeightedDistance = weightedDistances[currentNodeId]! +
+            edge.weight * footwayPenalty +
+            edgePenalty;
+
+        if (newWeightedDistance < weightedDistances[edge.to]!) {
+          actualDistances[edge.to] = newActualDistance;
+          weightedDistances[edge.to] = newWeightedDistance;
+          previousNodes[edge.to] = currentNodeId;
+
+          priorityQueue.add(MapEntry(edge.to, newWeightedDistance));
+        }
+      }
+    }
+
+    // Reconstruct the shortest path
+    final path = <int>[];
+    var currentNodeId = targetId;
+    while (previousNodes.containsKey(currentNodeId)) {
+      path.add(currentNodeId);
+      currentNodeId = previousNodes[currentNodeId]!;
+    }
+    if (currentNodeId == startId) path.add(startId);
+
+    final route = path.reversed
+        .toList()
+        .map((a) => LatLng(graph.nodes[a]!.lat, graph.nodes[a]!.lon))
+        .toList();
+
+    // Track edges globally
+    for (var i = 0; i < path.length - 1; i++) {
+      usedEdges.add('${path[i]}-${path[i + 1]}');
+    }
+
+    return Trip(
+      route: route,
+      distance: actualDistances[targetId] ?? double.infinity,
+      errors: [],
+    );
+  }
+
   /// Calculates the total trip route and distance between any given waypoints.
   ///
   /// This function computes the optimal path between a list of waypoints, optionally adjusting the
@@ -254,7 +340,7 @@ class TripService {
   ///   - [preferWalkingPaths]: Bool flag indicating whether walking paths should be preferred
   ///     over other types of paths. Defaults to `true`.
   ///   - [replaceWaypointsWithBuildingEntrances]: Boolean flag that determines if waypoints should
-  ///     be replaced with building entrances. Defaults to `false`.
+  ///     be replaced with building entrances. If no entrance is found, the original waypoint is not replaced. Defaults to `false`.
   ///   - [forceIncludeWaypoints]: Boolean flag that forces the inclusion of waypoints in the final
   ///     route even if they are not exactly on a road. Defaults to `false`.
   ///
@@ -263,33 +349,42 @@ class TripService {
   ///   - [route]: List of `LatLng` locations representing the full trip route from start to destination.
   ///   - [distance]: `double`, representing the total distance of the trip in meters.
   ///   - [errors]: List of `String` containing error messages encountered during route calculation.
-  Future<Trip> findTotalTrip(
-    List<LatLng> waypoints, {
-    bool preferWalkingPaths = true,
-    bool replaceWaypointsWithBuildingEntrances = false,
-    bool forceIncludeWaypoints = false,
-  }) async {
+  ///   - [duplicationPenalty]: penalty term to prefer no duplicate ways in global trip
+  Future<Trip> findTotalTrip(List<LatLng> waypoints,
+      {bool preferWalkingPaths = true,
+      bool replaceWaypointsWithBuildingEntrances = false,
+      bool forceIncludeWaypoints = false,
+      double duplicationPenalty = 0.0}) async {
     var totalRoute = <LatLng>[];
     var totalDistance = 0.0;
     var errors = <String>[];
-
-    final bounds = findLatLonBounds(waypoints);
-
     List<bool> foundEntrance = [];
-    if (replaceWaypointsWithBuildingEntrances) {
-      waypoints =
-          await _replaceWaypointsWithEntrances(waypoints, foundEntrance);
+    List<double>? bounds;
+    if (currentCity == null) {
+      //non-offline mode
+      bounds = findLatLonBounds(waypoints);
+      if (replaceWaypointsWithBuildingEntrances) {
+        waypoints =
+            await _replaceWaypointsWithEntrances(waypoints, foundEntrance);
+      } else {
+        foundEntrance = List<bool>.filled(waypoints.length, false);
+      }
+      graph = await _fetchGraph(bounds, preferWalkingPaths);
     } else {
       foundEntrance = List<bool>.filled(waypoints.length, false);
     }
 
-    var graph = await _fetchGraph(bounds, preferWalkingPaths);
-
+    final usedEdges = <String>{}; // Track edges globally across all subtrips
     final queryIds = _findClosestNodes(graph, waypoints);
-
     for (var i = 0; i < queryIds.length - 1; i++) {
-      final subTrip = await _findSubTrip(graph, queryIds[i], queryIds[i + 1],
-          waypoints[i], waypoints[i + 1], bounds, preferWalkingPaths);
+      final subTrip = _findGlobalShortestPath(
+        graph,
+        queryIds[i],
+        queryIds[i + 1],
+        duplicationPenalty,
+        usedEdges,
+      );
+
       totalRoute.addAll(subTrip.route);
       totalDistance += subTrip.distance;
 
@@ -300,7 +395,11 @@ class TripService {
       }
     }
 
-    return Trip(route: totalRoute, distance: totalDistance, errors: errors);
+    return Trip(
+        route: totalRoute,
+        distance: totalDistance,
+        errors: errors,
+        boundingBox: bounds);
   }
 
   // Helper method to replace waypoints with building entrances
@@ -315,11 +414,10 @@ class TripService {
     // For each waypoint, check if an entrance is found and update accordingly
     for (int i = 0; i < waypoints.length; i++) {
       var point = waypoints[i];
-      // Find the entrance closest to the current waypoint (or use the available one from the entrances list)
       var updatedPoint = entrances.isNotEmpty ? entrances[i] : point;
       updatedWaypoints.add(updatedPoint);
       foundEntrance.add(updatedPoint !=
-          point); // Mark if the waypoint was updated with an entrance
+          point);
     }
 
     return updatedWaypoints;
@@ -333,43 +431,72 @@ class TripService {
     return _parseGraph(fetchedData, preferWalkingPaths);
   }
 
-  // Helper method to find sub-trip between two nodes with retries
-  Future<Trip> _findSubTrip(Graph graph, int startId, int endId, LatLng start,
-      LatLng end, List<double> bounds, bool preferWalkingPaths) async {
-    var subTrip = Trip(route: [], distance: 0, errors: []);
-    try {
-      subTrip = shortestPath(graph, startId, endId);
-      if (subTrip.route.isEmpty) {
-        subTrip.errors.add("Could not find sub-route between $start and $end");
-      }
-    } catch (e) {
-      print('Error calculating route: $e');
-      // Retry with increased bounding box padding
-      print('Retrying with increased bounding box...');
-      var updatedBounds =
-          findLatLonBounds([start, end], paddingLat: 0.6, paddingLon: 0.6);
-      var newGraph = await _fetchGraph(updatedBounds, preferWalkingPaths);
-      subTrip = await _retrySubTrip(newGraph, startId, endId);
-    }
-
-    return subTrip;
-  }
-
-  // Retry fetching the sub-trip in case of failure
-  Future<Trip> _retrySubTrip(Graph graph, int startId, int endId) async {
-    var subTrip = Trip(route: [], distance: 0, errors: []);
-    try {
-      subTrip = shortestPath(graph, startId, endId);
-    } catch (e) {
-      print('Error calculating route during retry: $e');
-    }
-    return subTrip;
-  }
-
   // Helper method to determine whether to add a waypoint to the route
   bool _shouldAddWaypoint(Trip subTrip, List<bool> foundEntrance,
       bool forceIncludeWaypoints, int index) {
     return forceIncludeWaypoints ||
         (foundEntrance[index + 1] && subTrip.route.isNotEmpty);
+  }
+
+  Future<String> getCityPath(String cityName) async {
+    // final Directory appDir = await getApplicationDocumentsDirectory();
+    // return '${appDir.path}/$cityName_graph.json';
+    return '$cityName.json';
+  }
+
+  /// Downloads routing data for a specified city and uses the cached file for future routing.
+  /// Note: offline routing doesnt allow to handle `replaceWaypointsWithBuildingEntrances`
+  ///
+  /// Parameters:
+  /// - [cityName]: The name of the city for which routing data is being prepared.
+  ///
+  /// Returns:
+  /// - A `Future<bool>` indicating whether the operation was successful:
+  ///   - `true`: Routing data was successfully loaded or downloaded.
+  ///   - `false`: An error occurred while fetching the bounding box
+  ///
+  Future<bool> useCity(String cityName) async {
+    final filePath = await getCityPath(cityName);
+    try {
+      graph = await graph.loadGraph(filePath);
+      currentCity = cityName;
+    } catch (e) {
+      final boundingBox = await _fetchBoundingBox(cityName);
+      if (boundingBox == null) {
+        print('Could not fetch bounding box for $cityName.');
+        return false;
+      }
+      currentCity = cityName;
+      final minLat = boundingBox['minLat']!;
+      final minLon = boundingBox['minLon']!;
+      final maxLat = boundingBox['maxLat']!;
+      final maxLon = boundingBox['maxLon']!;
+      graph = await _fetchGraph([minLat, minLon, maxLat, maxLon], true);
+      await graph.saveGraph(filePath);
+    }
+    return true;
+  }
+
+  Future<Map<String, double>?> _fetchBoundingBox(String city) async {
+    final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?city=$city&format=json&limit=1');
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final results = jsonDecode(response.body) as List;
+        if (results.isNotEmpty) {
+          final result = results[0];
+          return {
+            'minLat': double.parse(result['boundingbox'][0]),
+            'maxLat': double.parse(result['boundingbox'][1]),
+            'minLon': double.parse(result['boundingbox'][2]),
+            'maxLon': double.parse(result['boundingbox'][3]),
+          };
+        }
+      }
+    } catch (e) {
+      print('Error fetching bounding box: $e');
+    }
+    return null;
   }
 }

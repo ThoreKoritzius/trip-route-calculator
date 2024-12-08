@@ -8,6 +8,8 @@ void main() async {
   ];
 
   final routing = TripService();
+  await routing.useCity('Aachen'); //make routing available offline
+
   try {
     final trip = await routing.findTotalTrip(waypoints,
         preferWalkingPaths: true, replaceWaypointsWithBuildingEntrances: true);
