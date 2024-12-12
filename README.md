@@ -1,6 +1,8 @@
 ## Routing Trip Planner
 Flutter client-side trip-routing calculator package for multiple waypoints, optimized for pedestrian navigation. This package uses overpass api to fetch all ways inside bounding box of your waypoints and calculates an optimal route between them. A detailed polyline route containing a list of LatLng points is returned.
 
+This package is production-ready and powers the AI travel app [Worldbummlr](https://worldbummlr.com?ref=trip_routing).
+
 ### Highlights
 - Client-side routing
 - Offline capability
