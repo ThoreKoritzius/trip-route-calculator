@@ -41,3 +41,8 @@
 ## 0.0.11
 
 * Offline routing capability
+
+
+## 0.0.13
+
+* Improved reliability
