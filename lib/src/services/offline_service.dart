@@ -9,7 +9,7 @@ Future<String> downloadCity(String city) async {
   // Fetch city bounding box using an external API (e.g., OpenCage or Mapbox)
   final boundingBox = await _fetchBoundingBox(city);
   if (boundingBox == null) {
-    print('Could not fetch bounding box for $city.');
+    // print('Could not fetch bounding box for $city.');
     return '';
   }
 
@@ -47,14 +47,14 @@ Future<String> downloadCity(String city) async {
       final file = File(storeFilePath);
       await file.writeAsString(jsonEncode(data));
 
-      print('Data saved to $storeFilePath');
+      // print('Data saved to $storeFilePath');
       return storeFilePath;
     } else {
-      print('Error: ${response.statusCode} ${response.reasonPhrase}');
+      // print('Error: ${response.statusCode} ${response.reasonPhrase}');
       return '';
     }
   } catch (e) {
-    print('Exception occurred: $e');
+    // print('Exception occurred: $e');
     return '';
   }
 }
@@ -77,7 +77,7 @@ Future<Map<String, double>?> _fetchBoundingBox(String city) async {
       }
     }
   } catch (e) {
-    print('Error fetching bounding box: $e');
+    // print('Error fetching bounding box: $e');
   }
   return null;
 }

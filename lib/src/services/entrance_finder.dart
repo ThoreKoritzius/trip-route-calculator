@@ -88,7 +88,7 @@ class BuildingAndEntranceFinder {
             }
           }
           if (containingBuilding != null) {
-            print("Found building: ${containingBuilding['id']}");
+            // print("Found building: ${containingBuilding['id']}");
 
             // Step 3: Fetch entrances to the building
             final relevantEntrances = entrances.where((entrance) {
@@ -116,12 +116,12 @@ class BuildingAndEntranceFinder {
             entranceLocations.add(inputLocation);
           }
         } else {
-          print("No nearby entrances found for ${inputLocation.toString()}");
+          // print("No nearby entrances found for ${inputLocation.toString()}");
           entranceLocations.add(inputLocation);
         }
       }
     } catch (e) {
-      print("Error: $e");
+      // print("Error: $e");
       return inputLocations;
     }
 

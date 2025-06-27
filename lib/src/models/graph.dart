@@ -65,7 +65,6 @@ class Graph {
       graph.addEdge(edge);
     }
 
-    print('Graph loaded from $filePath');
     return graph;
   }
 
@@ -92,6 +91,5 @@ class Graph {
     };
 
     await file.writeAsString(jsonEncode(graphJson));
-    print('Graph saved at $filePath');
   }
 }

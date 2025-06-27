@@ -33,7 +33,7 @@ class TripService {
   ) async {
     // Clamp bounds to avoid NaN/Infinity from the start
     double clamp(double v, double min, double max) =>
-      v.isFinite ? v.clamp(min, max) as double : min;
+        v.isFinite ? v.clamp(min, max) : min;
     minLat = clamp(minLat, -90, 90);
     maxLat = clamp(maxLat, -90, 90);
     minLon = clamp(minLon, -180, 180);
@@ -68,6 +68,7 @@ class TripService {
               }
               return 0.0;
             }
+
             int safeInt(dynamic v) {
               if (v is int) return v;
               if (v is num && v.isFinite) return v.round();
@@ -77,6 +78,7 @@ class TripService {
               }
               return -1;
             }
+
             return {
               'type': e['type'] ?? '',
               'id': safeInt(e['id']),
@@ -156,7 +158,10 @@ class TripService {
             lon.isFinite) {
           try {
             graph.addNode(Node(
-              id, lat, lon, false,
+              id,
+              lat,
+              lon,
+              false,
             ));
           } catch (_) {}
         }
@@ -174,8 +179,9 @@ class TripService {
         for (int i = 0; i < nodes.length - 1; i++) {
           final int startIndex =
               nodes[i] is int ? nodes[i] : int.tryParse('${nodes[i]}') ?? -1;
-          final int endIndex =
-              nodes[i + 1] is int ? nodes[i + 1] : int.tryParse('${nodes[i + 1]}') ?? -1;
+          final int endIndex = nodes[i + 1] is int
+              ? nodes[i + 1]
+              : int.tryParse('${nodes[i + 1]}') ?? -1;
           final startNode = graph.nodes[startIndex];
           final endNode = graph.nodes[endIndex];
           if (startNode == null || endNode == null) continue;
@@ -207,12 +213,13 @@ class TripService {
     final closestNodeIds = <int>[];
     final allNodeValues = graph.nodes.values.toList();
     for (final position in positions) {
-      int closestNodeId = allNodeValues.isNotEmpty ? allNodeValues.first.id : -1;
+      int closestNodeId =
+          allNodeValues.isNotEmpty ? allNodeValues.first.id : -1;
       var minDistance = double.maxFinite;
 
       for (final node in allNodeValues) {
         final distance = haversineDistance(
-          position.latitude, position.longitude, node.lat, node.lon);
+            position.latitude, position.longitude, node.lat, node.lon);
         if (distance.isFinite && distance < minDistance) {
           minDistance = distance;
           closestNodeId = node.id;
@@ -240,8 +247,10 @@ class TripService {
       actualDistances[nodeId] = double.infinity;
       weightedDistances[nodeId] = double.infinity;
     }
-    if (!graph.nodes.containsKey(startId) || !graph.nodes.containsKey(targetId)) {
-      return Trip(route: [], distance: 0.0, errors: ['Start/target node not found.']);
+    if (!graph.nodes.containsKey(startId) ||
+        !graph.nodes.containsKey(targetId)) {
+      return Trip(
+          route: [], distance: 0.0, errors: ['Start/target node not found.']);
     }
 
     actualDistances[startId] = 0.0;
@@ -258,11 +267,14 @@ class TripService {
 
         final isFootWay = graph.nodes[edge.to]?.isFootWay ?? false;
         final footwayPenalty = isFootWay ? 0.95 : 1.0;
-        final weight = (edge.weight.isFinite && edge.weight > 0) ? edge.weight : 1.0;
+        final weight =
+            (edge.weight.isFinite && edge.weight > 0) ? edge.weight : 1.0;
         final newActualDistance = actualDistances[currentNodeId]! + weight;
-        final newWeightedDistance = weightedDistances[currentNodeId]! + weight * footwayPenalty;
+        final newWeightedDistance =
+            weightedDistances[currentNodeId]! + weight * footwayPenalty;
 
-        if (newWeightedDistance < (weightedDistances[edge.to] ?? double.infinity)) {
+        if (newWeightedDistance <
+            (weightedDistances[edge.to] ?? double.infinity)) {
           actualDistances[edge.to] = newActualDistance;
           weightedDistances[edge.to] = newWeightedDistance;
           previousNodes[edge.to] = currentNodeId;
@@ -295,7 +307,9 @@ class TripService {
 
     return Trip(
       route: route,
-      distance: (actualDistances[targetId]?.isFinite ?? false) ? actualDistances[targetId]! : 0.0,
+      distance: (actualDistances[targetId]?.isFinite ?? false)
+          ? actualDistances[targetId]!
+          : 0.0,
       errors: [],
     );
   }
@@ -319,7 +333,8 @@ class TripService {
       actualDistances[nodeId] = double.infinity;
       weightedDistances[nodeId] = double.infinity;
     }
-    if (!graph.nodes.containsKey(startId) || !graph.nodes.containsKey(targetId)) {
+    if (!graph.nodes.containsKey(startId) ||
+        !graph.nodes.containsKey(targetId)) {
       return Trip(route: [], distance: 0.0, errors: ['Start/target not found']);
     }
     actualDistances[startId] = 0.0;
@@ -336,15 +351,19 @@ class TripService {
 
         // Form an edge key in both directions for penalty
         final edgeKey = '${edge.from}-${edge.to}';
-        final edgePenalty = usedEdges.contains(edgeKey) ? duplicationPenalty : 0.0;
+        final edgePenalty =
+            usedEdges.contains(edgeKey) ? duplicationPenalty : 0.0;
         final isFootWay = graph.nodes[edge.to]?.isFootWay ?? false;
         final footwayPenalty = isFootWay ? 0.95 : 1.0;
-        final weight = (edge.weight.isFinite && edge.weight > 0) ? edge.weight : 1.0;
+        final weight =
+            (edge.weight.isFinite && edge.weight > 0) ? edge.weight : 1.0;
         final newActualDistance = actualDistances[currentNodeId]! + weight;
-        final newWeightedDistance =
-            weightedDistances[currentNodeId]! + weight * footwayPenalty + edgePenalty;
+        final newWeightedDistance = weightedDistances[currentNodeId]! +
+            weight * footwayPenalty +
+            edgePenalty;
 
-        if (newWeightedDistance < (weightedDistances[edge.to] ?? double.infinity)) {
+        if (newWeightedDistance <
+            (weightedDistances[edge.to] ?? double.infinity)) {
           actualDistances[edge.to] = newActualDistance;
           weightedDistances[edge.to] = newWeightedDistance;
           previousNodes[edge.to] = currentNodeId;
@@ -381,7 +400,9 @@ class TripService {
 
     return Trip(
       route: route,
-      distance: (actualDistances[targetId]?.isFinite ?? false) ? actualDistances[targetId]! : 0.0,
+      distance: (actualDistances[targetId]?.isFinite ?? false)
+          ? actualDistances[targetId]!
+          : 0.0,
       errors: [],
     );
   }
@@ -425,7 +446,8 @@ class TripService {
     if (currentCity == null) {
       bounds = findLatLonBounds(waypoints);
       if (replaceWaypointsWithBuildingEntrances) {
-        waypoints = await _replaceWaypointsWithEntrances(waypoints, foundEntrance);
+        waypoints =
+            await _replaceWaypointsWithEntrances(waypoints, foundEntrance);
       } else {
         foundEntrance = List.filled(waypoints.length, false);
       }
@@ -435,7 +457,11 @@ class TripService {
     }
 
     if (graph.nodes.isEmpty) {
-      return Trip(route: [], distance: 0.0, errors: ['Graph data unavailable'], boundingBox: bounds);
+      return Trip(
+          route: [],
+          distance: 0.0,
+          errors: ['Graph data unavailable'],
+          boundingBox: bounds);
     }
 
     final usedEdges = <String>{};
@@ -453,7 +479,8 @@ class TripService {
       totalRoute.addAll(subTrip.route);
       totalDistance += subTrip.distance;
 
-      if (_shouldAddWaypoint(subTrip, foundEntrance, forceIncludeWaypoints, i)) {
+      if (_shouldAddWaypoint(
+          subTrip, foundEntrance, forceIncludeWaypoints, i)) {
         totalRoute.add(waypoints[i + 1]);
       }
 
@@ -466,8 +493,7 @@ class TripService {
         route: totalRoute,
         distance: totalDistance.isFinite ? totalDistance : 0.0,
         errors: errors,
-        boundingBox: bounds
-    );
+        boundingBox: bounds);
   }
 
   /// Replace each waypoint with detected building entrance if available.
@@ -478,8 +504,7 @@ class TripService {
     for (int i = 0; i < waypoints.length; i++) {
       final original = waypoints[i];
       // Defensive: matching by index, fallback if not found
-      LatLng updated =
-          (entrances.length > i && entrances[i] != null) ? entrances[i] : original;
+      LatLng updated = (entrances.length > i) ? entrances[i] : original;
       updatedWaypoints.add(updated);
       foundEntrance.add(updated != original);
     }
@@ -487,7 +512,8 @@ class TripService {
   }
 
   /// Fetch and parse the OSM graph in a bounding box.
-  Future<Graph> _fetchGraph(List<double> bounds, bool preferWalkingPaths) async {
+  Future<Graph> _fetchGraph(
+      List<double> bounds, bool preferWalkingPaths) async {
     if (bounds.length < 4) return Graph();
     List<double> safeBounds = List<double>.from(bounds.take(4).map((x) {
       if (x.isFinite) return x;
@@ -499,8 +525,8 @@ class TripService {
   }
 
   /// Decide if the (possibly replaced) waypoint should be forcibly put in the final route.
-  bool _shouldAddWaypoint(
-      Trip subTrip, List<bool> foundEntrance, bool forceIncludeWaypoints, int index) {
+  bool _shouldAddWaypoint(Trip subTrip, List<bool> foundEntrance,
+      bool forceIncludeWaypoints, int index) {
     if (subTrip.route.isEmpty) return false;
     if (forceIncludeWaypoints) return true;
     // Defensive: index may be last-1 for last subTrip call
@@ -531,7 +557,7 @@ class TripService {
     } catch (_) {
       final boundingBox = await _fetchBoundingBox(cityName);
       if (boundingBox == null) {
-        print('Could not fetch bounding box for $cityName.');
+        // print('Could not fetch bounding box for $cityName.');
         return false;
       }
       currentCity = cityName;
@@ -577,7 +603,7 @@ class TripService {
         }
       }
     } catch (e) {
-      print('Error fetching bounding box: $e');
+      // print('Error fetching bounding box: $e');
     }
     return null;
   }
