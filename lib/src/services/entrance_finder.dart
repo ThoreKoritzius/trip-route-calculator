@@ -35,8 +35,10 @@ class BuildingAndEntranceFinder {
     List<LatLng> entranceLocations = [];
 
     try {
-      final elements = await _osm
-          .overpass(_generateOverpassQuery(inputLocations, searchRadius));
+      // Entrances are optional, so fail fast instead of retrying.
+      final elements = await _osm.overpass(
+          _generateOverpassQuery(inputLocations, searchRadius),
+          maxRetries: 0);
 
       // Extract entrances and buildings
       List<Map<String, dynamic>> entrances = [];

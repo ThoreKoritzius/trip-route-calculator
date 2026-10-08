@@ -12,6 +12,20 @@ const footWayHighways = {
   'living_street',
 };
 
+const _noAccess = {'no', 'private'};
+const _footAllowed = {'yes', 'designated', 'permissive'};
+
+/// Whether pedestrians may use a way with the given OSM [tags].
+///
+/// `foot=*` overrides the general `access=*` restriction, so e.g.
+/// `access=no` + `foot=yes` stays walkable.
+bool isWalkable(Map tags) {
+  final foot = tags['foot'];
+  if (_noAccess.contains(foot)) return false;
+  if (_noAccess.contains(tags['access'])) return _footAllowed.contains(foot);
+  return true;
+}
+
 /// Builds a routing graph from raw Overpass `elements` (nodes and ways).
 ///
 /// Connected components with at most [minIslandSize] nodes are removed so
@@ -35,11 +49,12 @@ Graph buildGraphFromOsmElements(List<dynamic> elements,
     if (element is! Map || element['type'] != 'way') continue;
     final nodes = element['nodes'];
     if (nodes is! List) continue;
-    final tags = element['tags'];
-    final isFootWay = tags is Map &&
-        (footWayHighways.contains(tags['highway']) ||
-            tags['footway'] != null ||
-            tags['foot'] == 'designated');
+    final tags = element['tags'] is Map ? element['tags'] as Map : const {};
+    if (!isWalkable(tags)) continue;
+    final isFootWay = footWayHighways.contains(tags['highway']) ||
+        tags['footway'] != null ||
+        tags['foot'] == 'designated';
+    final isSteps = tags['highway'] == 'steps';
 
     for (int i = 0; i < nodes.length - 1; i++) {
       final startNode = graph.nodes[nodes[i]];
@@ -54,7 +69,7 @@ Graph buildGraphFromOsmElements(List<dynamic> elements,
       final dist = haversineDistance(
           startNode.lat, startNode.lon, endNode.lat, endNode.lon);
       graph.addEdge(Edge(startNode.id, endNode.id, dist.isFinite ? dist : 0.0,
-          isFootWay: isFootWay));
+          isFootWay: isFootWay, isSteps: isSteps));
     }
   }
 

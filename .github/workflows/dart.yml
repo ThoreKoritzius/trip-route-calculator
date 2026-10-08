@@ -41,6 +41,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Test the oldest allowed dependency versions on the oldest Flutter.
+      - name: Downgrade to minimum dependency versions
+        if: matrix.name != 'stable'
+        run: flutter pub downgrade
+
       - name: Check formatting
         if: matrix.name == 'stable'
         run: dart format --output=none --set-exit-if-changed lib test example
@@ -50,6 +55,10 @@ jobs:
 
       - name: Run tests
         run: flutter test --exclude-tags network
+
+      - name: Run browser tests
+        if: matrix.name == 'stable'
+        run: flutter test --platform chrome test/web_test.dart
 
   publish-check:
     name: Publish dry run

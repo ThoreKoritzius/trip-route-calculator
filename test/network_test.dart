@@ -23,6 +23,11 @@ void main() {
     expect(trip.errors, isEmpty);
     expect(trip.route, isNotEmpty);
     expect(trip.distance, greaterThan(0));
+    // Snapping puts the route ends on the way next to the waypoints.
+    expect(
+        haversineDistance(trip.route.last.latitude, trip.route.last.longitude,
+            waypoints.last.latitude, waypoints.last.longitude),
+        lessThan(100));
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('useCity (offline) routes within Aachen', () async {

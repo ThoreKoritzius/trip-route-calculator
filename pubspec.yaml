@@ -9,7 +9,7 @@ environment:
   flutter: '>=3.24.0'
 
 dependencies:
-  latlong2: ^0.9.1
+  latlong2: '>=0.9.1 <0.11.0'
   collection: ^1.18.0
   http: ^1.2.2
 

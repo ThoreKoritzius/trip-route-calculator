@@ -1,5 +1,4 @@
 import 'package:latlong2/latlong.dart';
-import 'package:collection/collection.dart';
 import 'package:http/http.dart' as http;
 import 'package:trip_routing/src/services/entrance_finder.dart';
 import 'package:trip_routing/trip_routing.dart';
@@ -8,9 +7,13 @@ import 'package:trip_routing/trip_routing.dart';
 ///
 /// Main entrypoint: [findTotalTrip].
 class TripService {
-  /// Cost multiplier for edges on dedicated walking ways when
-  /// `preferWalkingPaths` is enabled.
-  static const double footwayCostFactor = 0.95;
+  /// Default cost multiplier for edges on dedicated walking ways when
+  /// `preferWalkingPaths` is enabled (a footway may be ~11% longer).
+  static const double defaultFootwayCostFactor = 0.9;
+
+  /// Default maximum distance (meters) between a waypoint and the walkable
+  /// network; waypoints further away are reported as errors.
+  static const double defaultMaxSnapDistance = 1000;
 
   /// Minimum padding (in degrees, ~500 m) around the waypoints when fetching
   /// online data, so nearby or collinear waypoints still get a usable area.
@@ -39,109 +42,21 @@ class TripService {
   /// Returns a [Trip] with empty route and `distance = 0.0` if route cannot be found.
   Trip shortestPath(Graph graph, int startId, int targetId,
       {bool preferWalkingPaths = true}) {
-    return _shortestPath(graph, startId, targetId,
-        preferWalkingPaths: preferWalkingPaths);
-  }
-
-  /// Dijkstra over [graph]. Edges in [usedEdges] cost an extra
-  /// [duplicationPenalty]; the edges of the found path are added to it.
-  Trip _shortestPath(
-    Graph graph,
-    int startId,
-    int targetId, {
-    required bool preferWalkingPaths,
-    double duplicationPenalty = 0.0,
-    Set<(int, int)>? usedEdges,
-  }) {
-    if (!graph.nodes.containsKey(startId) ||
-        !graph.nodes.containsKey(targetId)) {
+    final start = graph.nodes[startId];
+    final target = graph.nodes[targetId];
+    if (start == null || target == null) {
       return Trip(
           route: [], distance: 0.0, errors: ['Start/target node not found.']);
     }
-    if (startId == targetId) {
-      final node = graph.nodes[startId]!;
-      return Trip(
-          route: [LatLng(node.lat, node.lon)], distance: 0.0, errors: []);
-    }
-
-    final actualDistances = <int, double>{startId: 0.0};
-    final weightedDistances = <int, double>{startId: 0.0};
-    final previousNodes = <int, int>{};
-    final visited = <int>{};
-    final priorityQueue = PriorityQueue<(int, double)>(
-      (a, b) => a.$2.compareTo(b.$2),
-    )..add((startId, 0.0));
-
-    while (priorityQueue.isNotEmpty) {
-      final currentNodeId = priorityQueue.removeFirst().$1;
-      if (!visited.add(currentNodeId)) continue;
-      if (currentNodeId == targetId) break;
-
-      for (final edge in graph.adjacencyList[currentNodeId] ?? const <Edge>[]) {
-        if (visited.contains(edge.to)) continue;
-
-        final weight =
-            (edge.weight.isFinite && edge.weight >= 0) ? edge.weight : 0.0;
-        final factor =
-            preferWalkingPaths && edge.isFootWay ? footwayCostFactor : 1.0;
-        final penalty = usedEdges != null &&
-                duplicationPenalty > 0 &&
-                usedEdges.contains(_edgeKey(edge.from, edge.to))
-            ? duplicationPenalty
-            : 0.0;
-        final newWeightedDistance =
-            weightedDistances[currentNodeId]! + weight * factor + penalty;
-
-        if (newWeightedDistance <
-            (weightedDistances[edge.to] ?? double.infinity)) {
-          actualDistances[edge.to] = actualDistances[currentNodeId]! + weight;
-          weightedDistances[edge.to] = newWeightedDistance;
-          previousNodes[edge.to] = currentNodeId;
-          priorityQueue.add((edge.to, newWeightedDistance));
-        }
-      }
-    }
-
-    if (!previousNodes.containsKey(targetId)) {
+    final result = routeBetween(
+        graph,
+        GraphSnap.atNode(start),
+        GraphSnap.atNode(target),
+        RouteCosts(preferWalkingPaths: preferWalkingPaths));
+    if (result == null) {
       return Trip(route: [], distance: 0.0, errors: ['No path found.']);
     }
-
-    // Reconstruct the path (start -> target)
-    final path = <int>[targetId];
-    while (path.last != startId) {
-      path.add(previousNodes[path.last]!);
-    }
-    final orderedPath = path.reversed.toList();
-
-    if (usedEdges != null) {
-      for (var i = 0; i < orderedPath.length - 1; i++) {
-        usedEdges.add(_edgeKey(orderedPath[i], orderedPath[i + 1]));
-      }
-    }
-
-    return Trip(
-      route: [
-        for (final id in orderedPath)
-          LatLng(graph.nodes[id]!.lat, graph.nodes[id]!.lon)
-      ],
-      distance: actualDistances[targetId]!,
-      errors: [],
-    );
-  }
-
-  /// Direction-independent key, so traversing an edge back counts as reuse.
-  (int, int) _edgeKey(int a, int b) => a < b ? (a, b) : (b, a);
-
-  /// Find the closest node id in graph for each position.
-  List<int> _findClosestNodes(Graph graph, List<LatLng> positions) {
-    return [
-      for (final position in positions)
-        minBy<Node, double>(
-                graph.nodes.values,
-                (node) => haversineDistance(
-                    position.latitude, position.longitude, node.lat, node.lon))!
-            .id
-    ];
+    return Trip(route: result.route, distance: result.distance, errors: []);
   }
 
   /// Calculates the total trip route and distance between any given waypoints.
@@ -160,6 +75,15 @@ class TripService {
   ///     route even if they are not exactly on a road. Defaults to `false`.
   ///   - [duplicationPenalty]: penalty term (in meters) added each time an
   ///     edge already used by a previous leg is reused.
+  ///   - [footwayCostFactor]: cost multiplier for walking ways when
+  ///     [preferWalkingPaths] is set; lower values prefer them more strongly.
+  ///   - [avoidSteps]: makes stairs 5x as expensive, e.g. for wheelchairs.
+  ///   - [maxSnapDistance]: waypoints further than this (meters) from any
+  ///     walkable way are reported in `errors` and their legs are skipped.
+  ///
+  /// Waypoints are snapped to the closest point on the walkable network, so
+  /// routes start and end on the road next to them rather than at the
+  /// nearest intersection or way node.
   ///
   /// Returns:
   ///   A `Future<Trip>` representing the total trip, including:
@@ -172,6 +96,9 @@ class TripService {
     bool replaceWaypointsWithBuildingEntrances = false,
     bool forceIncludeWaypoints = false,
     double duplicationPenalty = 0.0,
+    double footwayCostFactor = defaultFootwayCostFactor,
+    bool avoidSteps = false,
+    double maxSnapDistance = defaultMaxSnapDistance,
   }) async {
     if (waypoints.length < 2) {
       return Trip(
@@ -184,19 +111,21 @@ class TripService {
     var routingGraph = graph;
     var foundEntrance = List.filled(waypoints.length, false);
 
+    // Entrances are looked up online in both modes; without connectivity the
+    // original waypoints are kept.
+    if (replaceWaypointsWithBuildingEntrances) {
+      final entrances = await entranceFinder.findBuildingAndEntrance(waypoints);
+      if (entrances.length == waypoints.length) {
+        foundEntrance = [
+          for (var i = 0; i < waypoints.length; i++)
+            entrances[i] != waypoints[i]
+        ];
+        waypoints = entrances;
+      }
+    }
+
     // ONLINE mode: build the graph from the waypoints' bounding box
     if (currentCity == null) {
-      if (replaceWaypointsWithBuildingEntrances) {
-        final entrances =
-            await entranceFinder.findBuildingAndEntrance(waypoints);
-        if (entrances.length == waypoints.length) {
-          foundEntrance = [
-            for (var i = 0; i < waypoints.length; i++)
-              entrances[i] != waypoints[i]
-          ];
-          waypoints = entrances;
-        }
-      }
       bounds = findLatLonBounds(waypoints,
           minPaddingDegrees: minBoundsPaddingDegrees);
       try {
@@ -221,41 +150,55 @@ class TripService {
           boundingBox: bounds);
     }
 
-    final totalRoute = <LatLng>[];
-    var totalDistance = 0.0;
+    final costs = RouteCosts(
+      preferWalkingPaths: preferWalkingPaths,
+      footwayCostFactor: footwayCostFactor,
+      avoidSteps: avoidSteps,
+      duplicationPenalty: duplicationPenalty,
+    );
     final errors = <String>[];
-    final usedEdges = <(int, int)>{};
-    final queryIds = _findClosestNodes(routingGraph, waypoints);
-
-    if (forceIncludeWaypoints || foundEntrance.first) {
-      totalRoute.add(waypoints.first);
+    final snaps = <GraphSnap?>[];
+    for (var i = 0; i < waypoints.length; i++) {
+      final snap = snapToGraph(routingGraph, waypoints[i]);
+      if (snap == null || snap.distance > maxSnapDistance) {
+        errors.add('Waypoint ${i + 1} is ${snap?.distance.round() ?? '?'} m '
+            'from the nearest walkable way (max ${maxSnapDistance.round()} m).');
+        snaps.add(null);
+      } else {
+        snaps.add(snap);
+      }
     }
 
-    for (var i = 0; i < queryIds.length - 1; i++) {
-      final subTrip = _shortestPath(
-        routingGraph,
-        queryIds[i],
-        queryIds[i + 1],
-        preferWalkingPaths: preferWalkingPaths,
-        duplicationPenalty: duplicationPenalty,
-        usedEdges: usedEdges,
-      );
+    final totalRoute = <LatLng>[];
+    var totalDistance = 0.0;
+    final usedEdges = <(int, int)>{};
+    bool include(int i) => forceIncludeWaypoints || foundEntrance[i];
+    void append(LatLng point) {
+      if (totalRoute.isEmpty || totalRoute.last != point) totalRoute.add(point);
+    }
 
-      if (subTrip.errors.isNotEmpty) {
-        errors.addAll(subTrip.errors.map((e) => 'Leg ${i + 1}: $e'));
+    for (var i = 0; i < waypoints.length - 1; i++) {
+      final from = snaps[i];
+      final to = snaps[i + 1];
+      if (from == null || to == null) continue;
+
+      final leg =
+          routeBetween(routingGraph, from, to, costs, usedEdges: usedEdges);
+      if (leg == null) {
+        errors.add('Leg ${i + 1}: No path found.');
+        continue;
       }
 
-      // Skip the first point when it repeats the end of the previous leg.
-      final legRoute = subTrip.route;
-      final skipFirst = totalRoute.isNotEmpty &&
-          legRoute.isNotEmpty &&
-          legRoute.first == totalRoute.last;
-      totalRoute.addAll(skipFirst ? legRoute.skip(1) : legRoute);
-      totalDistance += subTrip.distance;
-
-      if (subTrip.route.isNotEmpty &&
-          (forceIncludeWaypoints || foundEntrance[i + 1])) {
-        totalRoute.add(waypoints[i + 1]);
+      // Off-network connectors to included waypoints count towards distance.
+      if (include(i)) {
+        append(waypoints[i]);
+        totalDistance += _distance(waypoints[i], from.point);
+      }
+      leg.route.forEach(append);
+      totalDistance += leg.distance;
+      if (include(i + 1)) {
+        append(waypoints[i + 1]);
+        totalDistance += _distance(to.point, waypoints[i + 1]);
       }
     }
 
@@ -266,57 +209,74 @@ class TripService {
         boundingBox: bounds);
   }
 
+  double _distance(LatLng a, LatLng b) =>
+      haversineDistance(a.latitude, a.longitude, b.latitude, b.longitude);
+
   /// Fetch and parse the OSM graph in a bounding box.
   Future<Graph> _fetchGraph(List<double> bounds) async {
     final elements = await _osm.fetchWalkableWays(
         bounds[0], bounds[1], bounds[2], bounds[3]);
-    return buildGraphFromOsmElements(elements);
+    return buildGraphFromOsmElements(elements)
+      ..createdAt = DateTime.now().toUtc();
   }
 
   /// Get the data path for this city name. (Override for specific platforms.)
   Future<String> getCityPath(String cityName) async => '$cityName.json';
 
   /// Downloads routing data for a specified city and uses the cached file for future routing.
-  /// Note: offline routing doesnt allow to handle `replaceWaypointsWithBuildingEntrances`
   ///
   /// Parameters:
   /// - [cityName]: The name of the city for which routing data is being prepared.
+  /// - [maxAge]: if set, a cached file older than this (or without a download
+  ///   timestamp) is refreshed. If the refresh fails, the stale cache is used.
+  ///
+  /// On platforms without a file system (web) the data is kept in memory only.
+  /// Building entrances (`replaceWaypointsWithBuildingEntrances`) are still
+  /// looked up online in offline mode, falling back to the original waypoints.
   ///
   /// Returns:
   /// - A `Future<bool>` indicating whether the operation was successful:
   ///   - `true`: Routing data was successfully loaded or downloaded.
   ///   - `false`: The city could not be found or its data could not be fetched.
   ///     The service then stays in its previous mode.
-  Future<bool> useCity(String cityName) async {
+  Future<bool> useCity(String cityName, {Duration? maxAge}) async {
     final filePath = await getCityPath(cityName);
+    Graph? cached;
     try {
-      final cached = await Graph.fromFile(filePath);
-      if (cached.nodes.isNotEmpty) {
-        graph = cached;
-        currentCity = cityName;
-        return true;
-      }
+      cached = await Graph.fromFile(filePath);
+      if (cached.nodes.isEmpty) cached = null;
     } catch (_) {
       // No usable cache, download below.
     }
 
-    final Graph downloaded;
+    final createdAt = cached?.createdAt;
+    final isFresh = maxAge == null ||
+        (createdAt != null &&
+            DateTime.now().toUtc().difference(createdAt) <= maxAge);
+    if (cached != null && isFresh) return _activate(cityName, cached);
+
+    Graph? downloaded;
     try {
       final bounds = await _osm.fetchCityBounds(cityName);
-      if (bounds == null) return false;
-      downloaded = await _fetchGraph(bounds);
+      if (bounds != null) downloaded = await _fetchGraph(bounds);
     } on OsmRequestException {
-      return false;
+      // Fall back to a stale cache below, if there is one.
     }
-    if (downloaded.nodes.isEmpty) return false;
+    if (downloaded == null || downloaded.nodes.isEmpty) {
+      return cached != null && _activate(cityName, cached);
+    }
 
-    graph = downloaded;
-    currentCity = cityName;
     try {
       await downloaded.saveGraph(filePath);
     } catch (_) {
       // Caching is best-effort; the graph is usable in memory regardless.
     }
+    return _activate(cityName, downloaded);
+  }
+
+  bool _activate(String cityName, Graph cityGraph) {
+    graph = cityGraph;
+    currentCity = cityName;
     return true;
   }
 

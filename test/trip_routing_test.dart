@@ -195,12 +195,19 @@ void main() {
     });
 
     test('surfaces HTTP failures as errors', () async {
+      var requests = 0;
       final service = TripService(
-          httpClient: MockClient((_) async => http.Response('busy', 429)));
+          osmClient: OsmClient(
+              retryDelay: Duration.zero,
+              client: MockClient((_) async {
+                requests++;
+                return http.Response('busy', 429);
+              })));
       final trip = await service
           .findTotalTrip([const LatLng(50.0, 6.0), const LatLng(50.0, 6.004)]);
       expect(trip.route, isEmpty);
       expect(trip.errors.single, contains('429'));
+      expect(requests, 3); // initial attempt + 2 retries
     });
 
     test('useCity downloads once and then loads from the cache', () async {
