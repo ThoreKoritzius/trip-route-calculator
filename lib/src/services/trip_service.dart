@@ -25,6 +25,11 @@ class TripService {
   /// If not null, current offline city name.
   String? currentCity;
 
+  /// Why the last [useCity] call could not download the city data, e.g.
+  /// `Overpass request failed with HTTP 504 (server busy)`. Also set when a
+  /// refresh failed and a stale cache was used instead; `null` otherwise.
+  String? lastCityError;
+
   /// The graph used for routing. Set by [useCity] for offline routing and
   /// updated with the fetched data on every online [findTotalTrip] call.
   Graph graph = Graph();
@@ -273,6 +278,7 @@ class TripService {
   ///   - `false`: The city could not be found or its data could not be fetched.
   ///     The service then stays in its previous mode.
   Future<bool> useCity(String cityName, {Duration? maxAge}) async {
+    lastCityError = null;
     final filePath = await getCityPath(cityName);
     var cached = await _loadCache(filePath);
     if (cached == null && filePath.endsWith('.trg')) {
@@ -291,9 +297,17 @@ class TripService {
     Graph? downloaded;
     try {
       final bounds = await _osm.fetchCityBounds(cityName);
-      if (bounds != null) downloaded = await _fetchGraph(bounds);
-    } on OsmRequestException {
+      if (bounds == null) {
+        lastCityError = 'City "$cityName" not found.';
+      } else {
+        downloaded = await _fetchGraph(bounds);
+        if (downloaded.nodes.isEmpty) {
+          lastCityError = 'No walkable ways found for "$cityName".';
+        }
+      }
+    } on OsmRequestException catch (e) {
       // Fall back to a stale cache below, if there is one.
+      lastCityError = e.message;
     }
     if (downloaded == null || downloaded.nodes.isEmpty) {
       return cached != null && _activate(cityName, cached);

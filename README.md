@@ -83,7 +83,7 @@ final routing = TripService();
 await routing.useCity('Aachen');
 ```
 
-This will fetch and store routing information for the specified city on first use, ensuring fast subsequent routing even without internet access. `useCity` returns `false` if the city data could not be fetched.
+This will fetch and store routing information for the specified city on first use, ensuring fast subsequent routing even without internet access. `useCity` returns `false` if the city data could not be fetched; `routing.lastCityError` then says why (e.g. city not found, or the public Overpass server is busy).
 
 By default the data is stored as `<city>.trg` in the current working directory, in a compact binary format (about 4x smaller and 5x faster to load than the JSON caches of version 0.0.13 and earlier, which are migrated automatically). On mobile platforms, override `getCityPath` to store it in a writable location (e.g. from `path_provider`):
 
