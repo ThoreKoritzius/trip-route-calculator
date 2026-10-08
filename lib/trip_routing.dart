@@ -7,9 +7,5 @@ export 'src/models/trip.dart';
 export 'src/services/trip_service.dart';
 export 'src/utils/haversine.dart';
 export 'src/utils/bounds_calculator.dart';
-
-/// A Calculator.
-class Calculator {
-  /// Returns [value] plus 1.
-  int addOne(int value) => value + 1;
-}
+export 'src/utils/graph_builder.dart';
+export 'src/services/osm_client.dart' show OsmClient, OsmRequestException;

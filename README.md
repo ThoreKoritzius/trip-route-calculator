@@ -67,7 +67,7 @@ try {
 - **`preferWalkingPaths`** *(bool)*: Whether to prioritize walking paths over other types of paths. Default: `true`.
 - **`replaceWaypointsWithBuildingEntrances`** *(bool)*: Whether to replace waypoints with building entrances, if available. Default: `false`.
 - **`forceIncludeWaypoints`** *(bool)*: Whether to force the inclusion of waypoints in the final route, even if they are not on a road. Default: `false`.
-- **`duplicationPenalty`** *(double?)*: Penalty term to discourage duplicate paths in the route. Default: `null`.
+- **`duplicationPenalty`** *(double)*: Penalty (in meters) added whenever an edge already used by a previous leg is reused, to discourage out-and-back routes. Default: `0.0`.
 
 ---
 
@@ -80,7 +80,19 @@ final routing = TripService();
 await routing.useCity('Aachen');
 ```
 
-This will fetch and store routing information for the specified city on first use, ensuring fast subsequent routing even without internet access.
+This will fetch and store routing information for the specified city on first use, ensuring fast subsequent routing even without internet access. `useCity` returns `false` if the city data could not be fetched.
+
+By default the data is stored as `<city>.json` in the current working directory. On mobile platforms, override `getCityPath` to store it in a writable location (e.g. from `path_provider`):
+
+```dart
+class AppTripService extends TripService {
+  @override
+  Future<String> getCityPath(String cityName) async =>
+      '${(await getApplicationSupportDirectory()).path}/$cityName.json';
+}
+```
+
+Call `routing.useOnlineData()` to switch back to fetching live data around the waypoints.
 
 ---
 
@@ -100,6 +112,13 @@ The route calculation returns the following:
 - **GitHub**: [https://github.com/ThoreKoritzius/trip-route-calculator](https://github.com/ThoreKoritzius/trip-route-calculator)
 
 ---
+
+## Development
+
+```bash
+flutter test                      # offline unit tests (HTTP is mocked)
+flutter test --tags network       # live Overpass/Nominatim integration tests
+```
 
 ## Contributing
 

@@ -9,12 +9,14 @@ class Graph {
 
   void addNode(Node node) {
     nodes[node.id] = node;
-    adjacencyList[node.id] = [];
+    adjacencyList.putIfAbsent(node.id, () => []);
   }
 
+  /// Adds an undirected edge (stored as two directed edges).
   void addEdge(Edge edge) {
     adjacencyList[edge.from]?.add(edge);
-    adjacencyList[edge.to]?.add(Edge(edge.to, edge.from, edge.weight));
+    adjacencyList[edge.to]
+        ?.add(Edge(edge.to, edge.from, edge.weight, isFootWay: edge.isFootWay));
   }
 
   void removeNode(int nodeId) {
@@ -28,7 +30,8 @@ class Graph {
     }
   }
 
-  Future<Graph> loadGraph(filePath) async {
+  /// Loads a graph previously written by [saveGraph].
+  static Future<Graph> fromFile(String filePath) async {
     final file = File(filePath);
 
     if (!await file.exists()) {
@@ -41,32 +44,41 @@ class Graph {
 
     // Reconstruct Graph
     final graph = Graph();
-    final nodeMap = <int, Node>{};
 
     // Add nodes
     for (final nodeJson in graphJson['nodes']) {
-      final node = Node(
-        nodeJson['id'],
-        nodeJson['lat'],
-        nodeJson['lon'],
-        nodeJson['isFootWay'],
-      );
-      graph.addNode(node);
-      nodeMap[node.id] = node;
+      graph.addNode(Node(
+        nodeJson['id'] as int,
+        (nodeJson['lat'] as num).toDouble(),
+        (nodeJson['lon'] as num).toDouble(),
+        nodeJson['isFootWay'] == true,
+      ));
     }
 
-    // Add edges
+    // Add edges. The file already contains both directions of every edge,
+    // so they are added as directed edges to avoid duplicating them.
     for (final edgeJson in graphJson['edges']) {
-      final edge = Edge(
-        edgeJson['from'],
-        edgeJson['to'],
-        edgeJson['weight'],
-      );
-      graph.addEdge(edge);
+      final from = edgeJson['from'] as int;
+      final to = edgeJson['to'] as int;
+      if (!graph.nodes.containsKey(from) || !graph.nodes.containsKey(to)) {
+        continue;
+      }
+      // Files written before edges carried the flag fall back to node flags.
+      final isFootWay = edgeJson['isFootWay'] as bool? ??
+          (graph.nodes[from]!.isFootWay && graph.nodes[to]!.isFootWay);
+      graph.adjacencyList[from]!.add(Edge(
+        from,
+        to,
+        (edgeJson['weight'] as num).toDouble(),
+        isFootWay: isFootWay,
+      ));
     }
 
     return graph;
   }
+
+  /// Loads a graph from [filePath]. Prefer the static [Graph.fromFile].
+  Future<Graph> loadGraph(String filePath) => Graph.fromFile(filePath);
 
   Future<void> saveGraph(String filePath) async {
     final file = File(filePath);
@@ -86,6 +98,7 @@ class Graph {
               'from': edge.from,
               'to': edge.to,
               'weight': edge.weight,
+              'isFootWay': edge.isFootWay,
             });
       }).toList(),
     };

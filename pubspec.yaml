@@ -1,12 +1,12 @@
 name: trip_routing
 description: "Flutter on-device trip-routing calculator package for multiple waypoints, optimized for pedestrian navigation."
-version: 0.0.13
+version: 0.0.14
 homepage: https://worldbummlr.com
 repository: https://github.com/ThoreKoritzius/trip-route-calculator
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
-  flutter: '>=3.3.0'
+  flutter: '>=3.24.0'
 
 dependencies:
   latlong2: ^0.9.1
