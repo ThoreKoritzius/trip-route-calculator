@@ -85,7 +85,7 @@ await routing.useCity('Aachen');
 
 This will fetch and store routing information for the specified city on first use, ensuring fast subsequent routing even without internet access. `useCity` returns `false` if the city data could not be fetched.
 
-By default the data is stored as `<city>.json` in the current working directory. On mobile platforms, override `getCityPath` to store it in a writable location (e.g. from `path_provider`):
+By default the data is stored as `<city>.trg` in the current working directory, in a compact binary format (about 4x smaller and 5x faster to load than the JSON caches of version 0.0.13 and earlier, which are migrated automatically). On mobile platforms, override `getCityPath` to store it in a writable location (e.g. from `path_provider`):
 
 ```dart
 class AppTripService extends TripService {
@@ -104,6 +104,20 @@ await routing.useCity('Aachen', maxAge: const Duration(days: 30));
 On the web there is no file system, so the city data is kept in memory only.
 
 Call `routing.useOnlineData()` to switch back to fetching live data around the waypoints.
+
+## Performance
+
+Online requests fetch roads and building entrances in parallel. The fetched area is reused for 10 minutes for later requests inside it (configurable via `TripService(onlineCacheDuration: ...)`), and successful entrance lookups are cached, so repeated or nearby requests need no network at all.
+
+Routing uses A* search and a spatial index for snapping waypoints. Measured on the city of Aachen (209k nodes, MacBook, `dart run benchmark/benchmark.dart`):
+
+| | 0.0.14 | before |
+|---|---|---|
+| Load offline city | 88 ms, 11 MB file, +110 MB RAM | 423 ms, 43 MB file, +456 MB RAM |
+| Route 900 m | 0.7 ms | 37 ms |
+| Route 21 km across the city | 85 ms | 229 ms |
+| Route with 10 waypoints | 0.5 ms | 172 ms |
+| Repeated online request | ~1 ms (cached) | full download (5–30 s) |
 
 ## Networking
 

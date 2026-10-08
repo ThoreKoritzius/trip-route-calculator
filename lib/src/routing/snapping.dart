@@ -6,6 +6,7 @@ import '../models/edge.dart';
 import '../models/graph.dart';
 import '../models/node.dart';
 import '../utils/haversine.dart';
+import 'spatial_index.dart';
 
 /// A position projected onto the routing network.
 class GraphSnap {
@@ -38,13 +39,22 @@ class GraphSnap {
 
 /// Projects [position] onto the closest segment of [graph].
 ///
-/// Returns `null` for an empty graph.
+/// Uses a spatial index that is built on first use and rebuilt after the
+/// graph changes (see [Graph.revision]). Returns `null` for an empty graph.
 GraphSnap? snapToGraph(Graph graph, LatLng position) {
-  return snapToEdges(
-      graph,
-      position,
-      graph.adjacencyList.values.expand((edges) => edges),
-      () => graph.nodes.values);
+  final index = SegmentIndex.of(graph);
+  if (index.isEmpty) {
+    return snapToEdges(graph, position, const [], () => graph.nodes.values);
+  }
+  GraphSnap? best;
+  index.search(position, (edges) {
+    final snap = snapToEdges(graph, position, edges, () => const []);
+    if (snap != null && (best == null || snap.distance < best!.distance)) {
+      best = snap;
+    }
+    return best?.distance ?? double.infinity;
+  });
+  return best;
 }
 
 /// Like [snapToGraph], but only considers [candidates]; [allNodes] is used as

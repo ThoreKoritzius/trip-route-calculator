@@ -7,6 +7,11 @@ class BuildingAndEntranceFinder {
   final double searchRadius = 50.0; // Radius in meters
   final OsmClient _osm;
 
+  /// Results of successful lookups (failed lookups are not cached, so they
+  /// are retried next time). Bounded to [maxCachedLocations] entries.
+  final Map<LatLng, LatLng> _cache = {};
+  static const maxCachedLocations = 1000;
+
   BuildingAndEntranceFinder({OsmClient? osmClient})
       : _osm = osmClient ?? OsmClient();
 
@@ -32,12 +37,14 @@ class BuildingAndEntranceFinder {
   Future<List<LatLng>> findBuildingAndEntrance(
       List<LatLng> inputLocations) async {
     if (inputLocations.isEmpty) return [];
-    List<LatLng> entranceLocations = [];
+    final missing =
+        inputLocations.where((l) => !_cache.containsKey(l)).toSet().toList();
+    if (missing.isEmpty) return [for (final l in inputLocations) _cache[l]!];
 
     try {
       // Entrances are optional, so fail fast instead of retrying.
       final elements = await _osm.overpass(
-          _generateOverpassQuery(inputLocations, searchRadius),
+          _generateOverpassQuery(missing, searchRadius),
           maxRetries: 0);
 
       // Extract entrances and buildings
@@ -60,15 +67,18 @@ class BuildingAndEntranceFinder {
         }
       }
 
-      for (final inputLocation in inputLocations) {
-        entranceLocations.add(
-            _entranceFor(inputLocation, entrances, buildings) ?? inputLocation);
+      for (final location in missing) {
+        if (_cache.length >= maxCachedLocations) {
+          _cache.remove(_cache.keys.first); // Oldest entry first.
+        }
+        _cache[location] =
+            _entranceFor(location, entrances, buildings) ?? location;
       }
     } catch (e) {
-      return inputLocations;
+      return [for (final l in inputLocations) _cache[l] ?? l];
     }
 
-    return entranceLocations;
+    return [for (final l in inputLocations) _cache[l]!];
   }
 
   LatLng? _entranceFor(LatLng location, List<Map<String, dynamic>> entrances,

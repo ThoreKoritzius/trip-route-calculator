@@ -1,8 +1,11 @@
+import 'dart:math';
+
 import 'package:collection/collection.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/edge.dart';
 import '../models/graph.dart';
+import '../utils/haversine.dart';
 import 'snapping.dart';
 
 /// Cost model for pedestrian routing.
@@ -51,7 +54,7 @@ class RouteResult {
 /// Direction-independent key, so traversing an edge back counts as reuse.
 (int, int) edgeKey(int a, int b) => a < b ? (a, b) : (b, a);
 
-/// Finds the cheapest route from [start] to [target] (Dijkstra).
+/// Finds the cheapest route from [start] to [target] (A* search).
 ///
 /// Routes may start and end part-way along a segment. Edges of the returned
 /// route are added to [usedEdges]; edges already in it cost an additional
@@ -120,23 +123,41 @@ RouteResult? routeBetween(
     return RouteResult([start.point], 0);
   }
 
+  // A* towards the target point. The straight-line distance times the
+  // cheapest possible cost factor never overestimates the remaining cost
+  // (tails and penalties are non-negative), so results stay optimal.
+  final minFactor = [
+    1.0,
+    if (costs.preferWalkingPaths) costs.footwayCostFactor,
+    if (costs.avoidSteps) costs.stepsCostFactor,
+  ].reduce(min);
+  final targetLat = target.point.latitude, targetLon = target.point.longitude;
+  double heuristic(int nodeId) {
+    final node = graph.nodes[nodeId]!;
+    return minFactor *
+        haversineDistance(node.lat, node.lon, targetLat, targetLon);
+  }
+
   final weighted = <int, double>{};
   final actual = <int, double>{};
   final previous = <int, int>{};
   final visited = <int>{};
+  // Entries are (node, cost so far + heuristic).
   final queue = PriorityQueue<(int, double)>((a, b) => a.$2.compareTo(b.$2));
   for (final (node, weightedCost, length) in sources) {
     if (weightedCost < (weighted[node] ?? double.infinity)) {
       weighted[node] = weightedCost;
       actual[node] = length;
-      queue.add((node, weightedCost));
+      queue.add((node, weightedCost + heuristic(node)));
     }
   }
 
   while (queue.isNotEmpty) {
-    final (current, currentCost) = queue.removeFirst();
-    if (currentCost >= bestCost) break;
+    final (current, estimate) = queue.removeFirst();
+    // No remaining route can beat the best one found so far.
+    if (estimate >= bestCost) break;
     if (!visited.add(current)) continue;
+    final currentCost = weighted[current]!;
 
     final tail = targets[current];
     if (tail != null && currentCost + tail.$1 < bestCost) {
@@ -153,7 +174,7 @@ RouteResult? routeBetween(
         weighted[edge.to] = newCost;
         actual[edge.to] = actual[current]! + edge.weight;
         previous[edge.to] = current;
-        queue.add((edge.to, newCost));
+        queue.add((edge.to, newCost + heuristic(edge.to)));
       }
     }
   }

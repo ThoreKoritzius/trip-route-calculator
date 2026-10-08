@@ -91,3 +91,13 @@
   Overpass runtime errors) with exponential backoff and `Retry-After` support;
   optional `fallbackOverpassUrls`. Entrance lookups fail fast without retries.
 * Allow `latlong2` 0.10.
+* Performance (Aachen, 209k nodes): offline cities load 5x faster with 4x less
+  memory from a compact binary cache (`<city>.trg`, 4x smaller; JSON caches are
+  migrated automatically); routing uses A* and a spatial index for snapping
+  (10 waypoints: 172 ms → 0.5 ms, 21 km route: 229 ms → 85 ms).
+* Online requests fetch roads and entrances in parallel, reuse the fetched area
+  for later requests inside it (`onlineCacheDuration`, default 10 minutes) and
+  cache successful entrance lookups.
+* Add `Graph.toBytes`/`Graph.fromBytes`, `Graph.revision`/`markModified` and
+  `saveGraph(asJson:)`. Default `getCityPath` is now `<city>.trg`.
+* Add `benchmark/benchmark.dart`.

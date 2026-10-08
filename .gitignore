@@ -30,8 +30,11 @@ build/
 
 
 example/*.json
-# Offline city graphs written by TripService.useCity (e.g. Aachen.json)
+# Offline city graphs written by TripService.useCity (e.g. Aachen.trg, or
+# Aachen.json from versions up to 0.0.13)
 /*.json
+/*.trg
+/*.trg.tmp
 !/package.json
 
 # Stray npm install, not part of this package
