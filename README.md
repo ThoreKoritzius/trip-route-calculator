@@ -1,18 +1,19 @@
 # Trip Route Calculator
 
-**trip_routing** is a Flutter package designed for client-side trip routing with multiple waypoints, optimized for pedestrian navigation. It uses the Overpass API to fetch all relevant paths within a bounding box of your waypoints and calculates an optimal route between them. The output is a detailed polyline route containing a list of `LatLng` points, allowing a seamless integration into Flutter map applications.
+**trip_routing** is a Flutter package for on-device walking routes with multiple waypoints. It downloads the walkable OpenStreetMap network around your waypoints (or a whole city, for offline use) and calculates the route on the device, without a routing server. The result is a polyline of `LatLng` points that drops straight into Flutter map widgets.
 
-This package is production-ready and powers the AI travel app [Worldbummlr](https://worldbummlr.com?ref=trip_routing).
+It powers the AI travel app [Worldbummlr](https://worldbummlr.com?ref=trip_routing).
 
 ---
 
 ## Key Features
 
-- **Client-side routing**: Perform routing directly on the client without external dependencies.
-- **Offline capability**: Cache routing data for specific cities for offline use.
-- **Fetch building entrances**: Enhance pedestrian path precision by automatically fetching building entrances for waypoints associated with buildings.
-- **Optimized for pedestrians**: Prefers walking paths and pedestrian-friendly routes.
-- **Customizable routing**: Fine-tune routing preferences such as including duplicate paths or forcing waypoint inclusion.
+- **Routing on the device**: no routing server, no API key, no per-request cost. Map data comes from OpenStreetMap through the public Overpass API, or from an offline city cache.
+- **Offline cities**: download a city once (Aachen: 16 s, 11 MB) and route without a connection afterwards.
+- **Fast**: a route across a city takes milliseconds on the device; see [Performance](#performance).
+- **Made for pedestrians**: prefers footpaths, can avoid stairs, excludes motorways and private ways, and can route to building entrances.
+- **Multiple waypoints**: plan tours with many stops, optionally discouraging walking the same street twice.
+- **All platforms**: Android, iOS, macOS, Windows, Linux and web (on the web, offline cities are kept in memory).
 
 ---
 
@@ -22,7 +23,7 @@ Add the package to your Flutter app by including the following in your `pubspec.
 
 ```yaml
 dependencies:
-  trip_routing: <latest>
+  trip_routing: ^0.0.14
 ```
 
 Then, run:
@@ -47,30 +48,37 @@ final waypoints = [
 ];
 
 final routing = TripService();
-try {
-    final trip = await routing.findTotalTrip(
-        waypoints,
-        preferWalkingPaths: true,
-        replaceWaypointsWithBuildingEntrances: true,
-    );
-    print('Calculated route: ${trip.route}');
-    print('Distance: ${trip.distance} meters');
-    print('Errors: ${trip.errors}');
-} catch (e) {
-    print('Error calculating route: $e');
-}
+final trip = await routing.findTotalTrip(
+    waypoints,
+    preferWalkingPaths: true,
+    replaceWaypointsWithBuildingEntrances: true,
+);
+print('Calculated route: ${trip.route}');
+print('Distance: ${trip.distance} meters');
+print('Errors: ${trip.errors}');
 ```
+
+Network and routing problems are reported in `trip.errors` instead of being thrown.
 
 ### `findTotalTrip` Parameters
 
-- **`waypoints`** *(List\<LatLng\>)*: Locations (latitude and longitude) between which the route is calculated.
+- **`waypoints`** *(List\<LatLng\>)*: Locations (latitude and longitude) between which the route is calculated, in visiting order.
 - **`preferWalkingPaths`** *(bool)*: Whether to prioritize walking paths over other types of paths. Default: `true`.
-- **`replaceWaypointsWithBuildingEntrances`** *(bool)*: Whether to replace waypoints with building entrances, if available. Default: `false`.
-- **`forceIncludeWaypoints`** *(bool)*: Whether to force the inclusion of waypoints in the final route, even if they are not on a road. Default: `false`.
+- **`replaceWaypointsWithBuildingEntrances`** *(bool)*: Whether to replace waypoints inside buildings with the building's entrance, if one is mapped. Default: `false`.
+- **`forceIncludeWaypoints`** *(bool)*: Whether to force the inclusion of waypoints in the final route, even if they are not on a road. The off-road distance is counted. Default: `false`.
 - **`duplicationPenalty`** *(double)*: Penalty (in meters) added whenever an edge already used by a previous leg is reused, to discourage out-and-back routes. Default: `0.0`.
 - **`footwayCostFactor`** *(double)*: Cost multiplier for dedicated walking ways when `preferWalkingPaths` is set; lower values prefer them more strongly. Default: `0.9`.
 - **`avoidSteps`** *(bool)*: Make stairs 5x as expensive, e.g. for wheelchair or stroller routes. Default: `false`.
 - **`maxSnapDistance`** *(double)*: Waypoints are snapped to the closest point on a walkable way; waypoints further away than this (in meters) are reported in `errors`. Default: `1000`.
+
+### Result
+
+`findTotalTrip` returns a `Trip`:
+
+- **`route`** *(List\<LatLng\>)*: The points forming the route, from the first to the last waypoint.
+- **`distance`** *(double)*: The total distance of the route in meters.
+- **`errors`** *(List\<String\>)*: Problems encountered, e.g. an unreachable waypoint or an unavailable map server. Empty on success.
+- **`boundingBox`** *(List\<double\>?)*: The area whose map data was used in online mode, as `[minLat, minLon, maxLat, maxLon]`.
 
 ---
 
@@ -91,7 +99,7 @@ By default the data is stored as `<city>.trg` in the current working directory, 
 class AppTripService extends TripService {
   @override
   Future<String> getCityPath(String cityName) async =>
-      '${(await getApplicationSupportDirectory()).path}/$cityName.json';
+      '${(await getApplicationSupportDirectory()).path}/$cityName.trg';
 }
 ```
 
@@ -105,19 +113,67 @@ On the web there is no file system, so the city data is kept in memory only.
 
 Call `routing.useOnlineData()` to switch back to fetching live data around the waypoints.
 
+---
+
 ## Performance
 
-Online requests fetch roads and building entrances in parallel. The fetched area is reused for 10 minutes for later requests inside it (configurable via `TripService(onlineCacheDuration: ...)`), and successful entrance lookups are cached, so repeated or nearby requests need no network at all.
+All numbers were measured on the city of Aachen (209,000 nodes) on a MacBook; phones are typically several times slower. Reproduce them with `dart run benchmark/benchmark.dart`.
 
-Routing uses A* search and a spatial index for snapping waypoints. Measured on the city of Aachen (209k nodes, MacBook, `dart run benchmark/benchmark.dart`):
-
-| | 0.0.14 | before |
+| | 0.0.14 | 0.0.13 |
 |---|---|---|
-| Load offline city | 88 ms, 11 MB file, +110 MB RAM | 423 ms, 43 MB file, +456 MB RAM |
-| Route 900 m | 0.7 ms | 37 ms |
-| Route 21 km across the city | 85 ms | 229 ms |
+| Load an offline city | 88 ms | 423 ms |
+| Offline city file | 11 MB | 43 MB |
+| Memory after loading | +110 MB | +456 MB |
+| Route, 900 m | 0.7 ms | 37 ms |
+| Route, 21 km across the city | 85 ms | 229 ms |
 | Route with 10 waypoints | 0.5 ms | 172 ms |
-| Repeated online request | ~1 ms (cached) | full download (5–30 s) |
+| Repeating an online request in the same area | ~1 ms | full download (5–30 s) |
+
+How it gets there:
+
+- **A\* search** towards the destination instead of exploring the whole city. Routes are still optimal: on 300 random trips through Aachen, distances matched the previous exhaustive search exactly.
+- **A spatial index** finds the nearest walkable way for each waypoint in about 0.05 ms instead of scanning every street.
+- **A compact binary city format** that loads without parsing JSON.
+- **Fewer network round trips online**: roads and building entrances are fetched in parallel, the fetched area is reused for 10 minutes for later requests inside it (`TripService(onlineCacheDuration: ...)`), and entrance lookups are cached.
+
+---
+
+## Compared with routing servers
+
+Most apps get walking routes from a routing server such as Google Maps, [OSRM](https://project-osrm.org) or [Valhalla](https://valhalla.github.io/valhalla/). trip_routing computes them on the device instead:
+
+| | trip_routing | OSRM / Valhalla (self-hosted or public) | Google Maps Routes API |
+|---|---|---|---|
+| Where routing runs | In your app | On a server | Google's servers |
+| Works offline | Yes, after `useCity` | No | No |
+| Setup | Add the package | Run a server, preprocess map data for hours | API key with billing |
+| Cost per route | None | Server costs | Billed per request |
+| Map data | OpenStreetMap | OpenStreetMap | Google |
+
+We routed seven walking trips through Aachen with trip_routing and with the public OSRM (foot profile) and Valhalla (pedestrian) servers on 8 October 2026, using the same stop coordinates and current OpenStreetMap data:
+
+| Trip | trip_routing | OSRM | Valhalla |
+|---|---:|---:|---:|
+| README example | 954 m | 960 m | 960 m |
+| Cathedral → Main station | 1,179 m | 1,210 m | 1,231 m |
+| Ponttor → Lousberg (park, hill) | 900 m | 901 m | 1,098 m |
+| Westpark → Elisenbrunnen | 1,610 m | 1,630 m | 1,567 m |
+| Main station → University hospital | 4,317 m | 4,201 m | 4,312 m |
+| Ponttor → Tivoli stadium | 2,239 m | 2,261 m | 2,350 m |
+| Old town tour (5 stops) | 2,242 m | 2,369 m | 2,485 m |
+| **Time per route (median)** | **0.7 ms** on the device | 79 ms round trip | 114 ms round trip |
+
+- **Route quality**: trip_routing's distances differ from OSRM's by 2.0% on average and from Valhalla's by 5.8%; OSRM and Valhalla differ from each other by 5.6%. Where trip_routing is shorter, it walks ordinary public streets that the other engines rank lower.
+- **Speed**: the server times are complete HTTP round trips from Germany, which an app would also pay; trip_routing's are pure computation on a laptop. Online, trip_routing first downloads map data for the area (typically a few seconds, then reused), and with an offline city it needs no network at all.
+- **Google Maps** was not part of the comparison because its API requires a billing account.
+
+### Known limitations
+
+- Waypoints snap to the geometrically nearest walkable way. For a point deep inside a large building this can be a poor entry point (in the comparison, the University hospital trip is 116 m longer than OSRM's for this reason). Use `replaceWaypointsWithBuildingEntrances` for such points.
+- Pedestrian squares mapped as areas (`area=yes`) are walked around rather than across.
+- The public Overpass server is shared and sometimes overloaded. Requests are retried, but for production apps consider [your own Overpass instance or fallbacks](#networking) and offline cities.
+
+---
 
 ## Networking
 
@@ -134,16 +190,6 @@ final routing = TripService(
 
 ---
 
-## Example Output
-
-The route calculation returns the following:
-
-- **`route`** *(List\<LatLng\>)*: A list of points forming the route.
-- **`distance`** *(double)*: The total distance of the route in meters.
-- **`errors`** *(List<String>?)*: Any errors encountered during routing.
-
----
-
 ## Where to Find More
 
 - **Flutter Package**: [trip_routing on pub.dev](https://pub.dev/packages/trip_routing)
@@ -154,8 +200,10 @@ The route calculation returns the following:
 ## Development
 
 ```bash
-flutter test                      # offline unit tests (HTTP is mocked)
-flutter test --tags network       # live Overpass/Nominatim integration tests
+flutter test                                  # offline unit tests (HTTP is mocked)
+flutter test --platform chrome test/web_test.dart  # browser tests
+flutter test --tags network                   # live Overpass/Nominatim integration tests
+dart run benchmark/benchmark.dart route Aachen.trg  # routing benchmark on a city cache
 ```
 
 ## Contributing
