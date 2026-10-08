@@ -8,7 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:trip_routing/trip_routing.dart';
 
 /// Integration tests against the live Overpass/Nominatim APIs.
-/// Excluded from CI; run with `flutter test --tags network`.
+/// Run weekly / on demand in CI; locally with `flutter test --tags network`.
 void main() {
   final waypoints = [
     const LatLng(50.77437074991441, 6.075419266272186),
@@ -20,6 +20,10 @@ void main() {
       waypoints,
       replaceWaypointsWithBuildingEntrances: true,
     );
+    if (trip.errors.length == 1 && _isUpstreamBusy(trip.errors.single)) {
+      markTestSkipped('Overpass busy: ${trip.errors.single}');
+      return;
+    }
     expect(trip.errors, isEmpty);
     expect(trip.route, isNotEmpty);
     expect(trip.distance, greaterThan(0));
@@ -32,7 +36,12 @@ void main() {
 
   test('useCity (offline) routes within Aachen', () async {
     final routing = TripService();
-    expect(await routing.useCity('Aachen'), isTrue);
+    final loaded = await routing.useCity('Aachen');
+    if (!loaded && _isUpstreamBusy(routing.lastCityError)) {
+      markTestSkipped('Overpass/Nominatim busy: ${routing.lastCityError}');
+      return;
+    }
+    expect(loaded, isTrue, reason: routing.lastCityError);
     final trip = await routing.findTotalTrip(waypoints);
     expect(trip.errors, isEmpty);
     expect(trip.route, isNotEmpty);
@@ -40,3 +49,10 @@ void main() {
     expect(File('Aachen.trg').existsSync(), isTrue);
   }, timeout: const Timeout(Duration(minutes: 5)));
 }
+
+/// The public instances are shared and often overloaded. A busy server says
+/// nothing about this package, so such runs are skipped instead of failing;
+/// any other error still fails the test.
+bool _isUpstreamBusy(String? error) =>
+    error != null &&
+    (error.contains('(server busy)') || error.contains('timed out'));

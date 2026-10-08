@@ -101,3 +101,5 @@
 * Add `Graph.toBytes`/`Graph.fromBytes`, `Graph.revision`/`markModified` and
   `saveGraph(asJson:)`. Default `getCityPath` is now `<city>.trg`.
 * Add `benchmark/benchmark.dart`.
+* `TripService.lastCityError` explains why `useCity` could not download a city
+  (e.g. city not found, Overpass busy).

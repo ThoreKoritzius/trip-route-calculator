@@ -264,6 +264,55 @@ void main() {
     });
   });
 
+  group('useCity failure reasons', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('trip_routing'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    Future<(bool, String?)> load(
+        Future<http.Response> Function(http.Request) handler) async {
+      final service = _TempCityService(dir, MockClient(handler));
+      final ok = await service.useCity('Fixture');
+      return (ok, service.lastCityError);
+    }
+
+    test('reports unknown cities', () async {
+      expect(await load((_) async => http.Response('[]', 200)),
+          (false, 'City "Fixture" not found.'));
+    });
+
+    test('reports a busy Overpass server after retries', () async {
+      final (ok, error) = await load((r) async =>
+          r.url.host.contains('nominatim')
+              ? fixtureHandler(r)
+              : http.Response('busy', 504));
+      expect(ok, isFalse);
+      expect(error, 'Overpass request failed with HTTP 504 (server busy)');
+    });
+
+    test('reports cities without walkable ways', () async {
+      final (ok, error) = await load((r) async =>
+          r.url.host.contains('nominatim')
+              ? fixtureHandler(r)
+              : http.Response('{"elements": []}', 200));
+      expect(ok, isFalse);
+      expect(error, 'No walkable ways found for "Fixture".');
+    });
+
+    test('is cleared on success and kept when falling back to a stale cache',
+        () async {
+      final service = _TempCityService(dir, MockClient(fixtureHandler));
+      service.lastCityError = 'old';
+      expect(await service.useCity('Fixture'), isTrue);
+      expect(service.lastCityError, isNull);
+
+      final offline = _TempCityService(
+          dir, MockClient((_) async => http.Response('busy', 429)));
+      expect(await offline.useCity('Fixture', maxAge: Duration.zero), isTrue);
+      expect(offline.lastCityError, contains('429'));
+    });
+  });
+
   group('OsmClient retries', () {
     OsmClient client(List<http.Response> responses, List<Uri> seen,
             {List<String> fallbacks = const []}) =>
