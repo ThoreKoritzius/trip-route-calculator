@@ -5,10 +5,28 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  schedule:
+    # Weekly run to catch upstream API / dependency breakage.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
+    name: Analyze & test (Flutter ${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported (Dart 3.5, see pubspec.yaml) and latest stable.
+          - name: '3.24'
+            version: '3.24.x'
+          - name: stable
+            version: ''
 
     steps:
       - uses: actions/checkout@v4
@@ -16,10 +34,51 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.25.5'
+          flutter-version: ${{ matrix.version }}
+          channel: stable
+          cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Check formatting
+        if: matrix.name == 'stable'
+        run: dart format --output=none --set-exit-if-changed lib test example
+
       - name: Analyze project source
-        run: flutter analyze
+        run: flutter analyze --fatal-infos
+
+      - name: Run tests
+        run: flutter test --exclude-tags network
+
+  publish-check:
+    name: Publish dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate package
+        run: flutter pub publish --dry-run
+
+  network:
+    name: Live API integration tests
+    # Depends on public Overpass/Nominatim availability, so only run on
+    # schedule or on demand rather than gating pushes.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter test --tags network

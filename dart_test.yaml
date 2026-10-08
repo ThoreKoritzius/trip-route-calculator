@@ -1,0 +1,4 @@
+tags:
+  network:
+    # Hits live Overpass/Nominatim APIs; run explicitly with --tags network.
+    timeout: 5x
