@@ -37,6 +37,6 @@ void main() {
     expect(trip.errors, isEmpty);
     expect(trip.route, isNotEmpty);
     expect(trip.distance, greaterThan(0));
-    expect(File('Aachen.json').existsSync(), isTrue);
+    expect(File('Aachen.trg').existsSync(), isTrue);
   }, timeout: const Timeout(Duration(minutes: 5)));
 }

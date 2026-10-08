@@ -1,6 +1,8 @@
 import 'edge.dart';
+import 'graph_codec.dart';
 import 'node.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import '../io/file_store.dart';
 
 class Graph {
@@ -13,18 +15,29 @@ class Graph {
 
   Graph({this.createdAt});
 
+  /// Incremented on every change made through this class, so derived data
+  /// (e.g. the spatial index used for snapping) knows when to rebuild. Call
+  /// [markModified] after mutating [nodes]/[adjacencyList] directly.
+  int get revision => _revision;
+  int _revision = 0;
+
+  void markModified() => _revision++;
+
   void addNode(Node node) {
+    _revision++;
     nodes[node.id] = node;
     adjacencyList.putIfAbsent(node.id, () => []);
   }
 
   /// Adds an undirected edge (stored as two directed edges).
   void addEdge(Edge edge) {
+    _revision++;
     adjacencyList[edge.from]?.add(edge);
     adjacencyList[edge.to]?.add(edge.reversed);
   }
 
   void removeNode(int nodeId) {
+    _revision++;
     // Remove node
     nodes.remove(nodeId);
 
@@ -35,17 +48,28 @@ class Graph {
     }
   }
 
-  /// Loads a graph previously written by [saveGraph].
+  /// Loads a graph previously written by [saveGraph] (binary, or the JSON
+  /// format used up to 0.0.13).
   ///
   /// Throws if the file does not exist, cannot be parsed, or the platform has
   /// no file system (web).
   static Future<Graph> fromFile(String filePath) async {
-    final jsonString = await readFileAsString(filePath);
-    if (jsonString == null) {
+    final bytes = await readFileAsBytes(filePath);
+    if (bytes == null) {
       throw Exception('Graph file for $filePath not found.');
     }
-    return Graph.fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
+    return Graph.fromBytes(bytes);
   }
+
+  /// Decodes a graph from [toBytes] output or legacy JSON.
+  factory Graph.fromBytes(Uint8List bytes) {
+    if (GraphCodec.isBinary(bytes)) return GraphCodec.decode(bytes);
+    return Graph.fromJson(
+        jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>);
+  }
+
+  /// Compact binary encoding, see [GraphCodec].
+  Uint8List toBytes() => GraphCodec.encode(this);
 
   /// Reconstructs a graph from the JSON written by [toJson].
   factory Graph.fromJson(Map<String, dynamic> graphJson) {
@@ -110,6 +134,9 @@ class Graph {
         }).toList(),
       };
 
-  Future<void> saveGraph(String filePath) =>
-      writeFileAsString(filePath, jsonEncode(toJson()));
+  /// Saves the graph to [filePath] in the compact binary format, or as JSON
+  /// if [asJson] is set.
+  Future<void> saveGraph(String filePath, {bool asJson = false}) =>
+      writeFileAsBytes(
+          filePath, asJson ? utf8.encode(jsonEncode(toJson())) : toBytes());
 }

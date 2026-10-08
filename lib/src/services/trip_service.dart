@@ -29,11 +29,19 @@ class TripService {
   /// updated with the fetched data on every online [findTotalTrip] call.
   Graph graph = Graph();
 
-  /// [httpClient] can be supplied to customise networking (e.g. for tests).
-  TripService({http.Client? httpClient, OsmClient? osmClient})
-      : this._(osmClient ?? OsmClient(client: httpClient));
+  /// How long the graph fetched for an online request is reused for later
+  /// requests whose area lies within it. [Duration.zero] disables reuse.
+  final Duration onlineCacheDuration;
+  _OnlineArea? _onlineArea;
 
-  TripService._(this._osm)
+  /// [httpClient] can be supplied to customise networking (e.g. for tests).
+  TripService({
+    http.Client? httpClient,
+    OsmClient? osmClient,
+    Duration onlineCacheDuration = const Duration(minutes: 10),
+  }) : this._(osmClient ?? OsmClient(client: httpClient), onlineCacheDuration);
+
+  TripService._(this._osm, this.onlineCacheDuration)
       : entranceFinder = BuildingAndEntranceFinder(osmClient: _osm);
 
   /// Compute the shortest path between two graph nodes, optionally preferring
@@ -111,25 +119,20 @@ class TripService {
     var routingGraph = graph;
     var foundEntrance = List.filled(waypoints.length, false);
 
-    // Entrances are looked up online in both modes; without connectivity the
+    // Entrance lookup and graph download run in parallel. Entrances lie
+    // within 50 m of the waypoints, well inside the minimum bounds padding.
+    // Entrances are also looked up in offline mode; without connectivity the
     // original waypoints are kept.
-    if (replaceWaypointsWithBuildingEntrances) {
-      final entrances = await entranceFinder.findBuildingAndEntrance(waypoints);
-      if (entrances.length == waypoints.length) {
-        foundEntrance = [
-          for (var i = 0; i < waypoints.length; i++)
-            entrances[i] != waypoints[i]
-        ];
-        waypoints = entrances;
-      }
-    }
+    final entrancesFuture = replaceWaypointsWithBuildingEntrances
+        ? entranceFinder.findBuildingAndEntrance(waypoints)
+        : null;
 
     // ONLINE mode: build the graph from the waypoints' bounding box
     if (currentCity == null) {
       bounds = findLatLonBounds(waypoints,
           minPaddingDegrees: minBoundsPaddingDegrees);
       try {
-        routingGraph = await _fetchGraph(bounds);
+        (routingGraph, bounds) = await _onlineGraph(bounds);
       } on OsmRequestException catch (e) {
         return Trip(
             route: [],
@@ -140,6 +143,17 @@ class TripService {
       // Kept for backwards compatibility; routing below uses the local graph
       // so concurrent calls cannot interfere with each other.
       graph = routingGraph;
+    }
+
+    if (entrancesFuture != null) {
+      final entrances = await entrancesFuture;
+      if (entrances.length == waypoints.length) {
+        foundEntrance = [
+          for (var i = 0; i < waypoints.length; i++)
+            entrances[i] != waypoints[i]
+        ];
+        waypoints = entrances;
+      }
     }
 
     if (routingGraph.nodes.isEmpty) {
@@ -212,6 +226,22 @@ class TripService {
   double _distance(LatLng a, LatLng b) =>
       haversineDistance(a.latitude, a.longitude, b.latitude, b.longitude);
 
+  /// The graph for [bounds], reusing the previous online graph if it covers
+  /// them and is recent enough. Returns the graph and the bounds it covers.
+  Future<(Graph, List<double>)> _onlineGraph(List<double> bounds) async {
+    final area = _onlineArea;
+    if (area != null &&
+        area.covers(bounds) &&
+        DateTime.now().difference(area.fetchedAt) < onlineCacheDuration) {
+      return (area.graph, area.bounds);
+    }
+    final fetched = await _fetchGraph(bounds);
+    if (onlineCacheDuration > Duration.zero && fetched.nodes.isNotEmpty) {
+      _onlineArea = _OnlineArea(bounds, fetched, DateTime.now());
+    }
+    return (fetched, bounds);
+  }
+
   /// Fetch and parse the OSM graph in a bounding box.
   Future<Graph> _fetchGraph(List<double> bounds) async {
     final elements = await _osm.fetchWalkableWays(
@@ -221,7 +251,10 @@ class TripService {
   }
 
   /// Get the data path for this city name. (Override for specific platforms.)
-  Future<String> getCityPath(String cityName) async => '$cityName.json';
+  ///
+  /// Caches are stored in a compact binary format. Caches written by
+  /// versions up to 0.0.13 (`<city>.json`) are still read and migrated.
+  Future<String> getCityPath(String cityName) async => '$cityName.trg';
 
   /// Downloads routing data for a specified city and uses the cached file for future routing.
   ///
@@ -241,12 +274,12 @@ class TripService {
   ///     The service then stays in its previous mode.
   Future<bool> useCity(String cityName, {Duration? maxAge}) async {
     final filePath = await getCityPath(cityName);
-    Graph? cached;
-    try {
-      cached = await Graph.fromFile(filePath);
-      if (cached.nodes.isEmpty) cached = null;
-    } catch (_) {
-      // No usable cache, download below.
+    var cached = await _loadCache(filePath);
+    if (cached == null && filePath.endsWith('.trg')) {
+      // Migrate a JSON cache written by 0.0.13 or earlier (`<city>.json`).
+      final legacyPath = '${filePath.substring(0, filePath.length - 4)}.json';
+      cached = await _loadCache(legacyPath);
+      if (cached != null) await _saveCache(cached, filePath);
     }
 
     final createdAt = cached?.createdAt;
@@ -266,12 +299,25 @@ class TripService {
       return cached != null && _activate(cityName, cached);
     }
 
+    await _saveCache(downloaded, filePath);
+    return _activate(cityName, downloaded);
+  }
+
+  Future<Graph?> _loadCache(String filePath) async {
     try {
-      await downloaded.saveGraph(filePath);
+      final cached = await Graph.fromFile(filePath);
+      return cached.nodes.isEmpty ? null : cached;
+    } catch (_) {
+      return null; // Missing, unreadable, or no file system (web).
+    }
+  }
+
+  Future<void> _saveCache(Graph cityGraph, String filePath) async {
+    try {
+      await cityGraph.saveGraph(filePath);
     } catch (_) {
       // Caching is best-effort; the graph is usable in memory regardless.
     }
-    return _activate(cityName, downloaded);
   }
 
   bool _activate(String cityName, Graph cityGraph) {
@@ -284,4 +330,19 @@ class TripService {
   void useOnlineData() {
     currentCity = null;
   }
+}
+
+/// The most recently fetched online graph and the area it covers.
+class _OnlineArea {
+  final List<double> bounds;
+  final Graph graph;
+  final DateTime fetchedAt;
+
+  _OnlineArea(this.bounds, this.graph, this.fetchedAt);
+
+  bool covers(List<double> other) =>
+      other[0] >= bounds[0] &&
+      other[1] >= bounds[1] &&
+      other[2] <= bounds[2] &&
+      other[3] <= bounds[3];
 }
