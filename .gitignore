@@ -35,7 +35,7 @@ example/*.json
 /*.json
 /*.trg
 /*.trg.tmp
-!/package.json
 
-# Stray npm install, not part of this package
+# Stray npm files, not part of this package (and must not be published)
 node_modules/
+/package-lock.json
