@@ -68,6 +68,9 @@ try {
 - **`replaceWaypointsWithBuildingEntrances`** *(bool)*: Whether to replace waypoints with building entrances, if available. Default: `false`.
 - **`forceIncludeWaypoints`** *(bool)*: Whether to force the inclusion of waypoints in the final route, even if they are not on a road. Default: `false`.
 - **`duplicationPenalty`** *(double)*: Penalty (in meters) added whenever an edge already used by a previous leg is reused, to discourage out-and-back routes. Default: `0.0`.
+- **`footwayCostFactor`** *(double)*: Cost multiplier for dedicated walking ways when `preferWalkingPaths` is set; lower values prefer them more strongly. Default: `0.9`.
+- **`avoidSteps`** *(bool)*: Make stairs 5x as expensive, e.g. for wheelchair or stroller routes. Default: `false`.
+- **`maxSnapDistance`** *(double)*: Waypoints are snapped to the closest point on a walkable way; waypoints further away than this (in meters) are reported in `errors`. Default: `1000`.
 
 ---
 
@@ -92,7 +95,28 @@ class AppTripService extends TripService {
 }
 ```
 
+Pass `maxAge` to refresh outdated data (the stale cache is still used if the refresh fails):
+
+```dart
+await routing.useCity('Aachen', maxAge: const Duration(days: 30));
+```
+
+On the web there is no file system, so the city data is kept in memory only.
+
 Call `routing.useOnlineData()` to switch back to fetching live data around the waypoints.
+
+## Networking
+
+Requests to the public Overpass and Nominatim APIs send an identifying User-Agent and are retried on transient failures (busy server, timeouts). To use your own or additional Overpass instances:
+
+```dart
+final routing = TripService(
+  osmClient: OsmClient(
+    overpassUrl: 'https://my-overpass.example/api/interpreter',
+    fallbackOverpassUrls: ['https://overpass.example.org/api/interpreter'],
+  ),
+);
+```
 
 ---
 

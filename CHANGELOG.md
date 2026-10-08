@@ -63,7 +63,8 @@
   so nearby/collinear waypoints still get routable data.
 * Fix entrance detection for entrances on the building outline.
 * `forceIncludeWaypoints` now also includes the first waypoint.
-* Send an identifying User-Agent, URL-encode city names, add request timeouts and
+* **Fix online routing in 0.0.13**: overpass-api.de now rejects requests without
+  an identifying User-Agent (HTTP 406), which 0.0.13 did not send. Also URL-encode city names, add request timeouts and
   report Overpass/Nominatim failures in `Trip.errors`.
 * Non-JSON responses (e.g. HTML error pages) and Overpass runtime errors reported
   with HTTP 200 (query timeouts with truncated data) are now handled as failures
@@ -72,3 +73,21 @@
   and routing cannot mix up concurrent calls.
 * Add `TripService(httpClient:)`, `TripService.useOnlineData()`, `Graph.fromFile`,
   `buildGraphFromOsmElements`; remove the leftover template `Calculator` class.
+* Snap waypoints to the closest point on the walkable network instead of the
+  nearest node, so routes start/end on the way next to each waypoint. Waypoints
+  further than `maxSnapDistance` (default 1000 m) are reported in `Trip.errors`.
+* `forceIncludeWaypoints` and building entrances now count the off-network
+  connectors in `Trip.distance`.
+* New `findTotalTrip` options: `footwayCostFactor` (default 0.9, was a fixed 0.95)
+  and `avoidSteps`. Ways with `access=private|no` are excluded unless `foot=yes`.
+* `replaceWaypointsWithBuildingEntrances` also works after `useCity` (needs
+  connectivity, falls back to the original waypoints).
+* `useCity(maxAge:)` refreshes outdated caches (falls back to the stale cache when
+  the download fails). Cache files now record their download time; caches are
+  written atomically.
+* Web support: file access is only used where available; on the web
+  `useCity` keeps the data in memory.
+* Retry Overpass/Nominatim requests on transient failures (HTTP 429/5xx, timeouts,
+  Overpass runtime errors) with exponential backoff and `Retry-After` support;
+  optional `fallbackOverpassUrls`. Entrance lookups fail fast without retries.
+* Allow `latlong2` 0.10.

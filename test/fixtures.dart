@@ -39,20 +39,24 @@ LatLng pos(Graph g, int id) => LatLng(g.nodes[id]!.lat, g.nodes[id]!.lon);
 int edgeCount(Graph g) =>
     g.adjacencyList.values.fold(0, (sum, edges) => sum + edges.length);
 
+/// Serves [fixture] for Overpass and a bounding box for Nominatim.
+Future<http.Response> fixtureHandler(http.Request request) async {
+  if (request.url.host == 'overpass-api.de') {
+    return http.Response(jsonEncode({'elements': fixture}), 200);
+  }
+  if (request.url.host == 'nominatim.openstreetmap.org') {
+    return http.Response(
+        jsonEncode([
+          {
+            'boundingbox': ['49.99', '50.02', '5.99', '6.02']
+          }
+        ]),
+        200);
+  }
+  return http.Response('not found', 404);
+}
+
 http.Client overpassMock({List<String>? userAgents}) => MockClient((request) {
       userAgents?.add(request.headers['User-Agent'] ?? '');
-      if (request.url.host == 'overpass-api.de') {
-        return Future.value(
-            http.Response(jsonEncode({'elements': fixture}), 200));
-      }
-      if (request.url.host == 'nominatim.openstreetmap.org') {
-        return Future.value(http.Response(
-            jsonEncode([
-              {
-                'boundingbox': ['49.99', '50.02', '5.99', '6.02']
-              }
-            ]),
-            200));
-      }
-      return Future.value(http.Response('not found', 404));
+      return fixtureHandler(request);
     });

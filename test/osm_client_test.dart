@@ -9,7 +9,10 @@ import 'package:trip_routing/trip_routing.dart';
 
 OsmClient _client(FutureOr<http.Response> Function(http.Request) handler,
         {Duration timeout = const Duration(seconds: 90)}) =>
-    OsmClient(client: MockClient((r) async => handler(r)), timeout: timeout);
+    OsmClient(
+        client: MockClient((r) async => handler(r)),
+        timeout: timeout,
+        retryDelay: Duration.zero);
 
 void main() {
   group('OsmClient.overpass', () {
