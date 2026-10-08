@@ -103,3 +103,14 @@
 * Add `benchmark/benchmark.dart`.
 * `TripService.lastCityError` explains why `useCity` could not download a city
   (e.g. city not found, Overpass busy).
+
+## 0.0.15
+
+* **Privacy:** new `RoutingPrivacy.area` mode (`TripService(privacy:)` or per
+  `findTotalTrip` call). Map data is requested for whole cells of a fixed ~1 km
+  grid (`privacyCellDegrees`), so the map server learns only which cells the
+  waypoints lie in instead of their exact positions; no entrance lookups.
+  Downloads about 3x as much map data. Adds `findGridBounds`.
+* Offline routing (after `useCity`) no longer looks up building entrances
+  online: `replaceWaypointsWithBuildingEntrances` is skipped there, so offline
+  routing never sends waypoint coordinates.

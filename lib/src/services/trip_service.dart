@@ -3,6 +3,21 @@ import 'package:http/http.dart' as http;
 import 'package:trip_routing/src/services/entrance_finder.dart';
 import 'package:trip_routing/trip_routing.dart';
 
+/// How much an online [TripService.findTotalTrip] reveals to the map data
+/// servers (Overpass) about the waypoints.
+enum RoutingPrivacy {
+  /// Map data is requested for the waypoints' area plus a margin, from which
+  /// the waypoints can be inferred precisely. Building entrances are looked
+  /// up by exact coordinates.
+  standard,
+
+  /// Map data is requested for whole cells of a fixed grid (about 1 km, see
+  /// [TripService.privacyCellDegrees]); any waypoints in the same cells
+  /// produce identical requests. Building entrances are not looked up.
+  /// Downloads about 3x as much map data.
+  area,
+}
+
 /// TripService provides routing and trip planning over OSM and cached city graphs.
 ///
 /// Main entrypoint: [findTotalTrip].
@@ -39,14 +54,26 @@ class TripService {
   final Duration onlineCacheDuration;
   _OnlineArea? _onlineArea;
 
+  /// Default privacy for [findTotalTrip]; see [RoutingPrivacy].
+  final RoutingPrivacy privacy;
+
+  /// Grid cell height in degrees of latitude for [RoutingPrivacy.area]
+  /// (cells are 1.5x as wide in degrees, so about square at 50° N). Larger
+  /// cells reveal less and download more.
+  final double privacyCellDegrees;
+
   /// [httpClient] can be supplied to customise networking (e.g. for tests).
   TripService({
     http.Client? httpClient,
     OsmClient? osmClient,
     Duration onlineCacheDuration = const Duration(minutes: 10),
-  }) : this._(osmClient ?? OsmClient(client: httpClient), onlineCacheDuration);
+    RoutingPrivacy privacy = RoutingPrivacy.standard,
+    double privacyCellDegrees = 0.01,
+  }) : this._(osmClient ?? OsmClient(client: httpClient), onlineCacheDuration,
+            privacy, privacyCellDegrees);
 
-  TripService._(this._osm, this.onlineCacheDuration)
+  TripService._(this._osm, this.onlineCacheDuration, this.privacy,
+      this.privacyCellDegrees)
       : entranceFinder = BuildingAndEntranceFinder(osmClient: _osm);
 
   /// Compute the shortest path between two graph nodes, optionally preferring
@@ -84,6 +111,9 @@ class TripService {
   ///     over other types of paths. Defaults to `true`.
   ///   - [replaceWaypointsWithBuildingEntrances]: Boolean flag that determines if waypoints should
   ///     be replaced with building entrances. If no entrance is found, the original waypoint is not replaced. Defaults to `false`.
+  ///     The lookup sends the exact waypoint coordinates to Overpass, so it is
+  ///     skipped in offline mode (after [useCity]) and with
+  ///     [RoutingPrivacy.area].
   ///   - [forceIncludeWaypoints]: Boolean flag that forces the inclusion of waypoints in the final
   ///     route even if they are not exactly on a road. Defaults to `false`.
   ///   - [duplicationPenalty]: penalty term (in meters) added each time an
@@ -93,6 +123,7 @@ class TripService {
   ///   - [avoidSteps]: makes stairs 5x as expensive, e.g. for wheelchairs.
   ///   - [maxSnapDistance]: waypoints further than this (meters) from any
   ///     walkable way are reported in `errors` and their legs are skipped.
+  ///   - [privacy]: overrides [TripService.privacy] for this call.
   ///
   /// Waypoints are snapped to the closest point on the walkable network, so
   /// routes start and end on the road next to them rather than at the
@@ -112,7 +143,9 @@ class TripService {
     double footwayCostFactor = defaultFootwayCostFactor,
     bool avoidSteps = false,
     double maxSnapDistance = defaultMaxSnapDistance,
+    RoutingPrivacy? privacy,
   }) async {
+    privacy ??= this.privacy;
     if (waypoints.length < 2) {
       return Trip(
           route: List.of(waypoints),
@@ -124,18 +157,25 @@ class TripService {
     var routingGraph = graph;
     var foundEntrance = List.filled(waypoints.length, false);
 
-    // Entrance lookup and graph download run in parallel. Entrances lie
-    // within 50 m of the waypoints, well inside the minimum bounds padding.
-    // Entrances are also looked up in offline mode; without connectivity the
-    // original waypoints are kept.
-    final entrancesFuture = replaceWaypointsWithBuildingEntrances
+    // The entrance lookup sends exact coordinates, so it only runs online
+    // in standard privacy mode; offline routing never reveals waypoints.
+    // It runs in parallel with the graph download. Entrances lie within 50 m
+    // of the waypoints, well inside the minimum bounds padding.
+    final online = currentCity == null;
+    final entrancesFuture = replaceWaypointsWithBuildingEntrances &&
+            online &&
+            privacy == RoutingPrivacy.standard
         ? entranceFinder.findBuildingAndEntrance(waypoints)
         : null;
 
     // ONLINE mode: build the graph from the waypoints' bounding box
-    if (currentCity == null) {
-      bounds = findLatLonBounds(waypoints,
-          minPaddingDegrees: minBoundsPaddingDegrees);
+    if (online) {
+      bounds = privacy == RoutingPrivacy.area
+          ? findGridBounds(waypoints,
+              cellLatDegrees: privacyCellDegrees,
+              minPaddingDegrees: minBoundsPaddingDegrees)
+          : findLatLonBounds(waypoints,
+              minPaddingDegrees: minBoundsPaddingDegrees);
       try {
         (routingGraph, bounds) = await _onlineGraph(bounds);
       } on OsmRequestException catch (e) {
@@ -269,8 +309,8 @@ class TripService {
   ///   timestamp) is refreshed. If the refresh fails, the stale cache is used.
   ///
   /// On platforms without a file system (web) the data is kept in memory only.
-  /// Building entrances (`replaceWaypointsWithBuildingEntrances`) are still
-  /// looked up online in offline mode, falling back to the original waypoints.
+  /// Routing on a city never sends waypoints anywhere: building entrance
+  /// lookups (`replaceWaypointsWithBuildingEntrances`) are skipped.
   ///
   /// Returns:
   /// - A `Future<bool>` indicating whether the operation was successful:
