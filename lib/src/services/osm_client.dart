@@ -57,7 +57,13 @@ class OsmClient {
       throw OsmRequestException(
           'Overpass request failed with HTTP ${response.statusCode}');
     }
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeJson(response.body, 'Overpass');
+    // Overpass reports query timeouts/out-of-memory as HTTP 200 with a
+    // `remark` and truncated elements; treat that as a failure.
+    final remark = decoded is Map ? decoded['remark'] : null;
+    if (remark is String && remark.contains('error')) {
+      throw OsmRequestException('Overpass query failed: $remark');
+    }
     final elements = decoded is Map ? decoded['elements'] : null;
     if (elements is! List) {
       throw OsmRequestException('Overpass response contained no elements');
@@ -100,7 +106,7 @@ out skel qt;
       throw OsmRequestException(
           'Nominatim request failed with HTTP ${response.statusCode}');
     }
-    final results = jsonDecode(response.body);
+    final results = _decodeJson(response.body, 'Nominatim');
     if (results is! List || results.isEmpty) return null;
     final bbox = results.first['boundingbox'];
     if (bbox is! List || bbox.length < 4) return null;
@@ -108,6 +114,15 @@ out skel qt;
     if (values.any((v) => v == null || !v.isFinite)) return null;
     // Nominatim order: [minLat, maxLat, minLon, maxLon]
     return [values[0]!, values[2]!, values[1]!, values[3]!];
+  }
+
+  dynamic _decodeJson(String body, String service) {
+    try {
+      return jsonDecode(body);
+    } on FormatException {
+      throw OsmRequestException(
+          '$service returned an invalid (non-JSON) response');
+    }
   }
 
   void close() => _client.close();
