@@ -65,6 +65,10 @@
 * `forceIncludeWaypoints` now also includes the first waypoint.
 * Send an identifying User-Agent, URL-encode city names, add request timeouts and
   report Overpass/Nominatim failures in `Trip.errors`.
-* Concurrent `findTotalTrip` calls no longer share the routing graph.
+* Non-JSON responses (e.g. HTML error pages) and Overpass runtime errors reported
+  with HTTP 200 (query timeouts with truncated data) are now handled as failures
+  instead of throwing a `FormatException` or routing on partial data.
+* `findTotalTrip` routes on a local graph, so a future `await` between fetching
+  and routing cannot mix up concurrent calls.
 * Add `TripService(httpClient:)`, `TripService.useOnlineData()`, `Graph.fromFile`,
   `buildGraphFromOsmElements`; remove the leftover template `Calculator` class.
