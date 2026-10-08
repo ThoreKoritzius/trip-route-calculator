@@ -47,3 +47,34 @@ List<double> findLatLonBounds(List<LatLng> points,
     min(maxLon, 180.0),
   ];
 }
+
+/// Returns `[minLat, minLon, maxLat, maxLon]` derived only from which cells
+/// of a fixed global grid the [points] lie in.
+///
+/// Cells are [cellLatDegrees] x ([cellLatDegrees] * 1.5), about 1.1 x 1.1 km
+/// at 50° N for the default. The box spanning the points' cells is padded
+/// like [findLatLonBounds] (30% of its size, at least [minPaddingDegrees]).
+/// Because nothing depends on the exact coordinates, any points within the
+/// same cells produce exactly the same bounds, so requesting map data for
+/// them reveals the points no more precisely than their cells.
+List<double> findGridBounds(List<LatLng> points,
+    {double cellLatDegrees = 0.01, double minPaddingDegrees = 0.005}) {
+  if (points.isEmpty) {
+    throw ArgumentError('The list of points cannot be empty.');
+  }
+  final cellLon = cellLatDegrees * 1.5;
+  final ys = points.map((p) => (p.latitude / cellLatDegrees).floor());
+  final xs = points.map((p) => (p.longitude / cellLon).floor());
+  final minY = ys.reduce(min), maxY = ys.reduce(max) + 1;
+  final minX = xs.reduce(min), maxX = xs.reduce(max) + 1;
+  final padY = max((maxY - minY) * cellLatDegrees * 0.3, minPaddingDegrees);
+  final padX = max((maxX - minX) * cellLon * 0.3, minPaddingDegrees);
+  // Rounded so that equal cells always print identically in queries.
+  double round(double v) => double.parse(v.toStringAsFixed(6));
+  return [
+    max(round(minY * cellLatDegrees - padY), -90.0),
+    max(round(minX * cellLon - padX), -180.0),
+    min(round(maxY * cellLatDegrees + padY), 90.0),
+    min(round(maxX * cellLon + padX), 180.0),
+  ];
+}

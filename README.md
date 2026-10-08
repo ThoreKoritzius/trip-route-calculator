@@ -65,11 +65,12 @@ try {
 
 - **`waypoints`** *(List\<LatLng\>)*: Locations (latitude and longitude) between which the route is calculated.
 - **`preferWalkingPaths`** *(bool)*: Whether to prioritize walking paths over other types of paths. Default: `true`.
-- **`replaceWaypointsWithBuildingEntrances`** *(bool)*: Whether to replace waypoints with building entrances, if available. Default: `false`.
+- **`replaceWaypointsWithBuildingEntrances`** *(bool)*: Whether to replace waypoints with building entrances, if available. Sends the exact waypoints to Overpass, so it only applies online in the default privacy mode. Default: `false`.
 - **`forceIncludeWaypoints`** *(bool)*: Whether to force the inclusion of waypoints in the final route, even if they are not on a road. Default: `false`.
 - **`duplicationPenalty`** *(double)*: Penalty (in meters) added whenever an edge already used by a previous leg is reused, to discourage out-and-back routes. Default: `0.0`.
 - **`footwayCostFactor`** *(double)*: Cost multiplier for dedicated walking ways when `preferWalkingPaths` is set; lower values prefer them more strongly. Default: `0.9`.
 - **`avoidSteps`** *(bool)*: Make stairs 5x as expensive, e.g. for wheelchair or stroller routes. Default: `false`.
+- **`privacy`** *(RoutingPrivacy?)*: What the map server may learn about the waypoints, see [Privacy](#privacy). Default: the service's `privacy` (`standard`).
 - **`maxSnapDistance`** *(double)*: Waypoints are snapped to the closest point on a walkable way; waypoints further away than this (in meters) are reported in `errors`. Default: `1000`.
 
 ---
@@ -118,6 +119,24 @@ Routing uses A* search and a spatial index for snapping waypoints. Measured on t
 | Route 21 km across the city | 85 ms | 229 ms |
 | Route with 10 waypoints | 0.5 ms | 172 ms |
 | Repeated online request | ~1 ms (cached) | full download (5–30 s) |
+
+## Privacy
+
+Routing itself runs on the device, but map data comes from the public Overpass API, which sees what is requested:
+
+| Mode | What the map server learns about your waypoints |
+|---|---|
+| Online, default (`RoutingPrivacy.standard`) | Their exact positions: the requested area is the waypoints plus a predictable margin, and building-entrance lookups send the exact coordinates. |
+| Online, `RoutingPrivacy.area` | Only which cells of a fixed ~1 km grid they lie in. Any waypoints in the same cells send identical requests. No entrance lookups. Downloads about 3x as much map data (median, measured in Aachen). |
+| Offline (`useCity`) | Nothing. Only the city name is sent once, when the city is downloaded. Entrance lookups are skipped. |
+
+```dart
+final routing = TripService(privacy: RoutingPrivacy.area);
+// or per request:
+await routing.findTotalTrip(waypoints, privacy: RoutingPrivacy.area);
+```
+
+Use `privacyCellDegrees` to change the cell size (default `0.01`, about 1.1 km). In every mode the servers see your IP address and when requests are made; use your own Overpass instance (see below) if that matters.
 
 ## Networking
 

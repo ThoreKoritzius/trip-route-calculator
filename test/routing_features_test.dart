@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -227,40 +226,17 @@ void main() {
       expect(service.graph.nodes, isNotEmpty);
     });
 
-    test('replaces waypoints with building entrances offline', () async {
-      // The start waypoint lies in a building whose entrance is node 1.
-      final entranceResponse = {
-        'elements': [
-          {
-            'type': 'way',
-            'id': 500,
-            'nodes': [1, 30, 31, 32, 1],
-            'tags': {'building': 'yes'},
-            'geometry': [
-              {'lat': 50.0, 'lon': 6.0},
-              {'lat': 49.9995, 'lon': 6.0},
-              {'lat': 49.9995, 'lon': 5.9995},
-              {'lat': 50.0, 'lon': 5.9995},
-              {'lat': 50.0, 'lon': 6.0},
-            ],
-          },
-          {
-            'type': 'node',
-            'id': 1,
-            'lat': 50.0,
-            'lon': 6.0,
-            'tags': {'entrance': 'main'},
-          },
-        ],
-      };
-      final service = _offline(graph,
-          client: MockClient(
-              (_) async => http.Response(jsonEncode(entranceResponse), 200)));
+    test('never looks up entrances (or uses the network) offline', () async {
+      var requests = 0;
+      final service = _offline(graph, client: MockClient((_) async {
+        requests++;
+        return http.Response('{"elements": []}', 200);
+      }));
       final trip = await service.findTotalTrip(
           [const LatLng(49.9998, 5.9998), pos(graph, 7)],
           replaceWaypointsWithBuildingEntrances: true);
       expect(trip.errors, isEmpty);
-      expect(trip.route.first, const LatLng(50.0, 6.0));
+      expect(requests, 0);
     });
   });
 
