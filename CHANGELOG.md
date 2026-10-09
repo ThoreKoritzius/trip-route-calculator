@@ -114,3 +114,6 @@
 * Offline routing (after `useCity`) no longer looks up building entrances
   online: `replaceWaypointsWithBuildingEntrances` is skipped there, so offline
   routing never sends waypoint coordinates.
+* README: statistical comparison with OSRM and Valhalla on 400 random trips
+  (route length, overlap, routing time, setup cost), reproducible with
+  `benchmark/engine_comparison`.
