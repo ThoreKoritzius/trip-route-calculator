@@ -1,0 +1,11 @@
+{
+  "json_decode_ms": 57.439,
+  "graph_build_ms": 34.903,
+  "total_build_and_write_ms": 109.093,
+  "nodes": 21063,
+  "directed_edges": 45996,
+  "graph_bytes": 1124555,
+  "rss_before_bytes": 7598080,
+  "rss_after_bytes": 51433472,
+  "process_peak_rss_bytes": 51187712
+}

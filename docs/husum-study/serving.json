@@ -1,0 +1,12 @@
+{
+  "transfers": 20,
+  "concurrency": 4,
+  "file_bytes": 1124555,
+  "sha256": "352bc3fcad85ca00d92d05c1301dd17a43171c9870642f98363dbe9307b9831f",
+  "total_seconds": 0.13533701101550832,
+  "transfer_median_ms": 15.046145010273904,
+  "transfer_max_ms": 83.83211598265916,
+  "peak_rss_kib": 34916,
+  "all_content_checks_passed": true,
+  "transport": "loopback HTTP only"
+}

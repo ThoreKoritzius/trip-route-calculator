@@ -1,0 +1,22 @@
+{
+  "id": "husum-study",
+  "experimental": true,
+  "format": "TRG1",
+  "source": "https://download.geofabrik.de/europe/germany/schleswig-holstein-latest.osm.pbf",
+  "source_sha256": "647a646932b7672c2975e0dc7e35f222c3a063c318c988f47c659f14a649cae1",
+  "osm_data_timestamp": "2026-10-20T20:23:47Z",
+  "coverage_bbox_lon_lat": [
+    8.98,
+    54.43,
+    9.14,
+    54.53
+  ],
+  "artifact_bytes": 1124555,
+  "artifact_sha256": "352bc3fcad85ca00d92d05c1301dd17a43171c9870642f98363dbe9307b9831f",
+  "gzip_bytes": 539237,
+  "gzip_sha256": "8944a3ac812edd2fdfcf2e0ab6cb7af3e22830e5f203a18bd67c6ed832461708",
+  "package_commit": "7466a19",
+  "attribution": "\u00a9 OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "license_url": "https://www.openstreetmap.org/copyright"
+}

@@ -1,0 +1,43 @@
+{
+  "load_ms": 14.615,
+  "nodes": 21063,
+  "directed_edges": 45996,
+  "component_sizes": [
+    21063
+  ],
+  "rss_before_bytes": 7585792,
+  "rss_after_load_bytes": 17522688,
+  "rss_after_routes_bytes": 56500224,
+  "process_peak_rss_bytes": 79978496,
+  "tours": [
+    {
+      "name": "market_harbour_castle_loop",
+      "route_ms": 6.999,
+      "distance_m": 1524.019864048026,
+      "route_points": 84,
+      "errors": [],
+      "start_snap_m": 25.52853278642282,
+      "end_snap_m": 25.52853278642282
+    },
+    {
+      "name": "station_market",
+      "route_ms": 0.349,
+      "distance_m": 768.6972297446987,
+      "route_points": 57,
+      "errors": [],
+      "start_snap_m": 0.49118533987421825,
+      "end_snap_m": 25.52853278642282
+    }
+  ],
+  "random_route_count": 200,
+  "random_route_median_ms": 2.508,
+  "random_route_p95_ms": 11.935,
+  "random_route_max_ms": 15.199,
+  "random_distance_median_m": 5169.523820877075,
+  "route_failures": 0,
+  "http_requests": 0,
+  "outside_area_errors": [
+    "Waypoint 2 is 75209 m from the nearest walkable way (max 1000 m)."
+  ],
+  "truncated_graph_rejected": true
+}
