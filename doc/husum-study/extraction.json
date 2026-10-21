@@ -1,0 +1,18 @@
+{
+  "scan_mode": "cpp_filters",
+  "bbox_lon_lat": [
+    8.98,
+    54.43,
+    9.14,
+    54.53
+  ],
+  "source_bytes": 159108553,
+  "candidate_ways_in_region": 458256,
+  "retained_ways": 4517,
+  "retained_nodes": 21202,
+  "ways_with_missing_locations": 0,
+  "extract_seconds": 23.008413387986366,
+  "extract_and_json_seconds": 23.187591427005827,
+  "peak_rss_kib": 339860,
+  "json_bytes": 2321061
+}
